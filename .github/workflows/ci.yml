@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Run golangci-lint
+        run: make lint
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run unit tests
+        run: go test -v -race -coverprofile=coverage.out ./tests/unit/...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+
+      - name: Generate coverage report
+        run: |
+          go tool cover -func=coverage.out -o=coverage.txt
+          echo "### Test Coverage :test_tube:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat coverage.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o bin/bot ./cmd/bot
+          ls -lh bin/bot
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: throttle-bot-linux-amd64
+          path: bin/bot
+          retention-days: 7
+
+      - name: Build summary
+        run: |
+          echo "### Build Successful :white_check_mark:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Binary:** \`bin/bot\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Size:** \`$(du -h bin/bot | cut -f1)\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Platform:** linux/amd64" >> $GITHUB_STEP_SUMMARY
+
+  integration-test:
+    name: Integration Tests (Docker)
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create test environment file
+        run: |
+          cat > .env.test <<EOF
+          TELEGRAM_TOKEN=test_token_for_ci
+          DATABASE_URL=postgresql://throttle:throttle@postgres:5432/throttlebot?sslmode=disable
+          LOG_LEVEL=debug
+          EOF
+
+      - name: Start services
+        run: |
+          docker compose -f docker-compose.test.yml up -d postgres
+          sleep 5
+
+      - name: Check PostgreSQL health
+        run: |
+          docker compose -f docker-compose.test.yml exec -T postgres pg_isready -U throttle
+
+      - name: Run migrations
+        run: |
+          docker compose -f docker-compose.test.yml run --rm bot-migrate || true
+
+      - name: Check database schema
+        run: |
+          docker compose -f docker-compose.test.yml exec -T postgres psql -U throttle -d throttlebot -c "SELECT version, dirty FROM schema_migrations;"
+
+      - name: Stop services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v

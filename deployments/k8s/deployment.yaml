@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: throttlebot
+  labels:
+    app: throttlebot
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: throttlebot
+  template:
+    metadata:
+      labels:
+        app: throttlebot
+    spec:
+      initContainers:
+      - name: migrate
+        image: migrate/migrate:v4.16.2
+        command:
+          - migrate
+          - -path=/migrations
+          - -database=$(DATABASE_URL)
+          - up
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: throttlebot-secrets
+              key: database-url
+        volumeMounts:
+        - name: migrations
+          mountPath: /migrations
+          readOnly: true
+      containers:
+      - name: throttlebot
+        image: throttlebot:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: health
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: TELEGRAM_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: throttlebot-secrets
+              key: telegram-token
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: throttlebot-secrets
+              key: database-url
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: throttlebot-config
+              key: log-level
+        - name: DEFAULT_CHAR_LIMIT
+          valueFrom:
+            configMapKeyRef:
+              name: throttlebot-config
+              key: default-char-limit
+        - name: DEFAULT_WINDOW
+          valueFrom:
+            configMapKeyRef:
+              name: throttlebot-config
+              key: default-window
+        - name: PORT
+          value: "8080"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: migrations
+        configMap:
+          name: throttlebot-migrations
+      restartPolicy: Always
+

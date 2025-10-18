@@ -1,0 +1,51 @@
+# Pre-commit hooks for throttleBot
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Go formatting
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        name: Format Go code
+        description: Run gofmt on Go files
+
+      - id: go-mod-tidy
+        name: Tidy Go modules
+        description: Run go mod tidy
+
+      - id: golangci-lint
+        name: Run golangci-lint
+        description: Run golangci-lint on Go files
+        args: ['--fix']
+
+      - id: go-unit-tests
+        name: Run Go unit tests
+        description: Run unit tests
+        args: ['./tests/unit/...']
+        pass_filenames: false
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+
+      - id: end-of-file-fixer
+        name: Fix end of files
+
+      - id: check-yaml
+        name: Check YAML syntax
+
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=1000']
+
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+
+      - id: detect-private-key
+        name: Detect private keys
+

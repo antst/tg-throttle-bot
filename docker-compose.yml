@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: throttlebot-db
+    environment:
+      POSTGRES_DB: throttlebot
+      POSTGRES_USER: throttle
+      POSTGRES_PASSWORD: throttle123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U throttle -d throttlebot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    # Use pre-built image from GitHub Container Registry
+    # To build locally instead, uncomment the 'build' section below
+    image: ghcr.io/antst/tg-throttle-bot:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: throttlebot
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      DATABASE_URL: postgres://throttle:throttle123@postgres:5432/throttlebot?sslmode=disable
+      LOG_LEVEL: debug
+      DEFAULT_CHAR_LIMIT: ${DEFAULT_CHAR_LIMIT:-100}
+      DEFAULT_WINDOW: ${DEFAULT_WINDOW:-1h}
+      PORT: ${PORT:-8080}
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

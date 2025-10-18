@@ -1,0 +1,25 @@
+# golangci-lint configuration for comprehensive linting
+# Updated for golangci-lint v2.5.0
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - integration
+
+linters:
+  enable:
+    - unused      # Unused variables, functions, types (enabled by default)
+    - govet       # Go vet analysis (enabled by default)
+    - staticcheck # Advanced static analysis (enabled by default)
+    - ineffassign # Detect ineffectual assignments (enabled by default)
+
+  disable:
+    - errcheck    # Allow unchecked errors in some contexts
+    - gocyclo     # Complexity not relevant for cleanup
+
+formatters:
+  enable:
+    - gofmt       # Check code formatting
+    - goimports   # Check import formatting
