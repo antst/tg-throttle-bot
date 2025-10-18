@@ -58,7 +58,7 @@ jobs:
             # Tag with PR number for pull requests
             type=ref,event=pr
             # Tag with commit SHA (short)
-            type=sha,prefix=,format=short
+            type=sha,prefix=,format=long
             # Tag as 'latest' for main branch
             type=raw,value=latest,enable={{is_default_branch}}
           labels: |
@@ -66,7 +66,8 @@ jobs:
             org.opencontainers.image.description=Multi-window rate limiting bot for Telegram groups
             org.opencontainers.image.vendor=antst
             org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
-
+      - name: Set SHORT_SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v6
@@ -132,8 +133,8 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-#          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.build-and-push.outputs.digest }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+#          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.SHORT_SHA }}
           format: 'sarif'
           output: 'trivy-results.sarif'
 
