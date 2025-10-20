@@ -52,6 +52,37 @@ func (q *Queries) CreateDefaultWindows(ctx context.Context, chatID int64) error 
 	return err
 }
 
+const CreateSyncMetadata = `-- name: CreateSyncMetadata :one
+INSERT INTO sync_metadata (
+    chat_id,
+    sync_status,
+    next_sync_at
+) VALUES (
+    $1, 'pending', NOW() + INTERVAL '24 hours'
+)
+ON CONFLICT (chat_id) DO NOTHING
+RETURNING id, chat_id, sync_status, last_sync_at, next_sync_at, created_at, updated_at, total_members, failed_attempts, last_error
+`
+
+// Initialize sync metadata for a new group
+func (q *Queries) CreateSyncMetadata(ctx context.Context, chatID int64) (SyncMetadatum, error) {
+	row := q.db.QueryRow(ctx, CreateSyncMetadata, chatID)
+	var i SyncMetadatum
+	err := row.Scan(
+		&i.ID,
+		&i.ChatID,
+		&i.SyncStatus,
+		&i.LastSyncAt,
+		&i.NextSyncAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TotalMembers,
+		&i.FailedAttempts,
+		&i.LastError,
+	)
+	return i, err
+}
+
 const EnsureGroup = `-- name: EnsureGroup :exec
 
 
@@ -74,6 +105,27 @@ func (q *Queries) EnsureGroup(ctx context.Context, chatID int64) error {
 	return err
 }
 
+const EnsureGroupWithUsername = `-- name: EnsureGroupWithUsername :exec
+INSERT INTO groups (chat_id, username)
+VALUES ($1, $2)
+ON CONFLICT (chat_id) DO UPDATE
+SET username = CASE 
+    WHEN EXCLUDED.username IS NOT NULL THEN EXCLUDED.username 
+    ELSE groups.username 
+END
+`
+
+type EnsureGroupWithUsernameParams struct {
+	ChatID   int64   `json:"chat_id"`
+	Username *string `json:"username"`
+}
+
+// Create or update group record with username (Feature 011: proactive group records)
+func (q *Queries) EnsureGroupWithUsername(ctx context.Context, arg EnsureGroupWithUsernameParams) error {
+	_, err := q.db.Exec(ctx, EnsureGroupWithUsername, arg.ChatID, arg.Username)
+	return err
+}
+
 const EnsureUser = `-- name: EnsureUser :exec
 INSERT INTO users (user_id, username, first_seen, last_seen)
 VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -92,6 +144,39 @@ type EnsureUserParams struct {
 func (q *Queries) EnsureUser(ctx context.Context, arg EnsureUserParams) error {
 	_, err := q.db.Exec(ctx, EnsureUser, arg.UserID, arg.Username)
 	return err
+}
+
+const GetActiveMembersInGroup = `-- name: GetActiveMembersInGroup :many
+SELECT u.user_id, u.username
+FROM group_memberships gm
+JOIN users u ON gm.user_id = u.user_id
+WHERE gm.chat_id = $1 AND gm.status = 'active'
+`
+
+type GetActiveMembersInGroupRow struct {
+	UserID   int64   `json:"user_id"`
+	Username *string `json:"username"`
+}
+
+// Get all active members in a group
+func (q *Queries) GetActiveMembersInGroup(ctx context.Context, chatID int64) ([]GetActiveMembersInGroupRow, error) {
+	rows, err := q.db.Query(ctx, GetActiveMembersInGroup, chatID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetActiveMembersInGroupRow{}
+	for rows.Next() {
+		var i GetActiveMembersInGroupRow
+		if err := rows.Scan(&i.UserID, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const GetAllGroups = `-- name: GetAllGroups :many
@@ -165,13 +250,10 @@ func (q *Queries) GetAllOverrides(ctx context.Context, chatID int64) ([]GetAllOv
 }
 
 const GetAllWindows = `-- name: GetAllWindows :many
-SELECT id, chat_id, slot_id, char_limit, duration_value, duration_unit, window_duration, enabled, created_at, updated_at
-FROM window_slots
-WHERE chat_id = $1
-ORDER BY slot_id
+SELECT id, chat_id, slot_id, char_limit, duration_value, duration_unit, window_duration, enabled, created_at, updated_at FROM window_slots WHERE chat_id = $1 ORDER BY slot_id
 `
 
-// Get all windows for a chat (for /showwindows command)
+// Get all windows for a chat (for /config command)
 func (q *Queries) GetAllWindows(ctx context.Context, chatID int64) ([]WindowSlot, error) {
 	rows, err := q.db.Query(ctx, GetAllWindows, chatID)
 	if err != nil {
@@ -247,6 +329,28 @@ func (q *Queries) GetEnabledWindows(ctx context.Context, chatID int64) ([]GetEna
 	return items, nil
 }
 
+const GetGroupByUsername = `-- name: GetGroupByUsername :one
+SELECT chat_id, username, language
+FROM groups
+WHERE LOWER(username) = LOWER($1)
+  AND username IS NOT NULL
+  AND username != ''
+`
+
+type GetGroupByUsernameRow struct {
+	ChatID   int64   `json:"chat_id"`
+	Username *string `json:"username"`
+	Language string  `json:"language"`
+}
+
+// Look up group by @username for group parameter parsing (Feature 008)
+func (q *Queries) GetGroupByUsername(ctx context.Context, lower string) (GetGroupByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, GetGroupByUsername, lower)
+	var i GetGroupByUsernameRow
+	err := row.Scan(&i.ChatID, &i.Username, &i.Language)
+	return i, err
+}
+
 const GetGroupConfig = `-- name: GetGroupConfig :one
 
 
@@ -254,7 +358,7 @@ const GetGroupConfig = `-- name: GetGroupConfig :one
 
 
 
-SELECT chat_id, paused, resume_at, created_at, updated_at FROM groups
+SELECT chat_id, paused, resume_at, created_at, updated_at, language, username FROM groups
 WHERE chat_id = $1
 `
 
@@ -293,8 +397,234 @@ func (q *Queries) GetGroupConfig(ctx context.Context, chatID int64) (Group, erro
 		&i.ResumeAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Language,
+		&i.Username,
 	)
 	return i, err
+}
+
+const GetGroupLanguage = `-- name: GetGroupLanguage :one
+
+SELECT language FROM groups
+WHERE chat_id = $1
+`
+
+// ============================================================================
+// Language Configuration Queries (Feature 007)
+// ============================================================================
+// Get the configured language for a group
+func (q *Queries) GetGroupLanguage(ctx context.Context, chatID int64) (string, error) {
+	row := q.db.QueryRow(ctx, GetGroupLanguage, chatID)
+	var language string
+	err := row.Scan(&language)
+	return language, err
+}
+
+const GetGroupMembership = `-- name: GetGroupMembership :one
+
+
+
+SELECT id, chat_id, user_id, status, joined_at, left_at, updated_at, is_admin, can_send_messages FROM group_memberships
+WHERE chat_id = $1 AND user_id = $2
+LIMIT 1
+`
+
+type GetGroupMembershipParams struct {
+	ChatID int64 `json:"chat_id"`
+	UserID int64 `json:"user_id"`
+}
+
+// ============================================================================
+// LEGACY Queries (DISABLED - columns removed from groups table in migration 000003)
+// ============================================================================
+// LEGACY: GetChatLimit - columns 'char_limit', 'window_duration' removed from groups table
+// LEGACY: SetChatLimit - columns removed from groups table
+// ============================================================================
+// Group Membership Tracking Queries (Feature 011)
+// ============================================================================
+// Get membership record for user in group
+func (q *Queries) GetGroupMembership(ctx context.Context, arg GetGroupMembershipParams) (GroupMembership, error) {
+	row := q.db.QueryRow(ctx, GetGroupMembership, arg.ChatID, arg.UserID)
+	var i GroupMembership
+	err := row.Scan(
+		&i.ID,
+		&i.ChatID,
+		&i.UserID,
+		&i.Status,
+		&i.JoinedAt,
+		&i.LeftAt,
+		&i.UpdatedAt,
+		&i.IsAdmin,
+		&i.CanSendMessages,
+	)
+	return i, err
+}
+
+const GetGroupsNeedingSync = `-- name: GetGroupsNeedingSync :many
+SELECT sm.id, sm.chat_id, sm.sync_status, sm.last_sync_at, sm.next_sync_at, sm.created_at, sm.updated_at, sm.total_members, sm.failed_attempts, sm.last_error, g.chat_id
+FROM sync_metadata sm
+JOIN groups g ON sm.chat_id = g.chat_id
+WHERE sm.next_sync_at < NOW() 
+  AND sm.sync_status != 'in_progress'
+ORDER BY sm.next_sync_at ASC
+LIMIT $1
+`
+
+type GetGroupsNeedingSyncRow struct {
+	ID             int64              `json:"id"`
+	ChatID         int64              `json:"chat_id"`
+	SyncStatus     string             `json:"sync_status"`
+	LastSyncAt     pgtype.Timestamptz `json:"last_sync_at"`
+	NextSyncAt     pgtype.Timestamptz `json:"next_sync_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	TotalMembers   *int32             `json:"total_members"`
+	FailedAttempts *int32             `json:"failed_attempts"`
+	LastError      *string            `json:"last_error"`
+	ChatID_2       int64              `json:"chat_id_2"`
+}
+
+// Get groups that need periodic sync (next_sync_at < NOW)
+func (q *Queries) GetGroupsNeedingSync(ctx context.Context, limit int32) ([]GetGroupsNeedingSyncRow, error) {
+	rows, err := q.db.Query(ctx, GetGroupsNeedingSync, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetGroupsNeedingSyncRow{}
+	for rows.Next() {
+		var i GetGroupsNeedingSyncRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChatID,
+			&i.SyncStatus,
+			&i.LastSyncAt,
+			&i.NextSyncAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TotalMembers,
+			&i.FailedAttempts,
+			&i.LastError,
+			&i.ChatID_2,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const GetRecentSyncEvents = `-- name: GetRecentSyncEvents :many
+SELECT se.id, se.metadata_id, se.event_type, se.started_at, se.completed_at, se.status, se.error_message, se.members_processed, se.members_added, se.members_updated, se.members_removed, sm.chat_id
+FROM sync_events se
+JOIN sync_metadata sm ON se.metadata_id = sm.id
+ORDER BY se.started_at DESC
+LIMIT $1
+`
+
+type GetRecentSyncEventsRow struct {
+	ID               int64              `json:"id"`
+	MetadataID       int64              `json:"metadata_id"`
+	EventType        string             `json:"event_type"`
+	StartedAt        pgtype.Timestamptz `json:"started_at"`
+	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
+	Status           string             `json:"status"`
+	ErrorMessage     *string            `json:"error_message"`
+	MembersProcessed *int32             `json:"members_processed"`
+	MembersAdded     *int32             `json:"members_added"`
+	MembersUpdated   *int32             `json:"members_updated"`
+	MembersRemoved   *int32             `json:"members_removed"`
+	ChatID           int64              `json:"chat_id"`
+}
+
+// Get recent sync events for monitoring (last N events)
+func (q *Queries) GetRecentSyncEvents(ctx context.Context, limit int32) ([]GetRecentSyncEventsRow, error) {
+	rows, err := q.db.Query(ctx, GetRecentSyncEvents, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetRecentSyncEventsRow{}
+	for rows.Next() {
+		var i GetRecentSyncEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MetadataID,
+			&i.EventType,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.Status,
+			&i.ErrorMessage,
+			&i.MembersProcessed,
+			&i.MembersAdded,
+			&i.MembersUpdated,
+			&i.MembersRemoved,
+			&i.ChatID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const GetStaleGroupMemberships = `-- name: GetStaleGroupMemberships :many
+SELECT gm.id, gm.chat_id, gm.user_id, gm.status, gm.joined_at, gm.left_at, gm.updated_at, gm.is_admin, gm.can_send_messages, g.chat_id
+FROM group_memberships gm
+JOIN groups g ON gm.chat_id = g.chat_id
+WHERE gm.status = 'active' 
+  AND gm.updated_at < NOW() - INTERVAL '48 hours'
+`
+
+type GetStaleGroupMembershipsRow struct {
+	ID              int64              `json:"id"`
+	ChatID          int64              `json:"chat_id"`
+	UserID          int64              `json:"user_id"`
+	Status          string             `json:"status"`
+	JoinedAt        pgtype.Timestamptz `json:"joined_at"`
+	LeftAt          pgtype.Timestamptz `json:"left_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	IsAdmin         bool               `json:"is_admin"`
+	CanSendMessages bool               `json:"can_send_messages"`
+	ChatID_2        int64              `json:"chat_id_2"`
+}
+
+// Find memberships not updated in last 48 hours (for metrics)
+func (q *Queries) GetStaleGroupMemberships(ctx context.Context) ([]GetStaleGroupMembershipsRow, error) {
+	rows, err := q.db.Query(ctx, GetStaleGroupMemberships)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetStaleGroupMembershipsRow{}
+	for rows.Next() {
+		var i GetStaleGroupMembershipsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChatID,
+			&i.UserID,
+			&i.Status,
+			&i.JoinedAt,
+			&i.LeftAt,
+			&i.UpdatedAt,
+			&i.IsAdmin,
+			&i.CanSendMessages,
+			&i.ChatID_2,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const GetUserByUsername = `-- name: GetUserByUsername :one
@@ -309,6 +639,19 @@ func (q *Queries) GetUserByUsername(ctx context.Context, lower string) (int64, e
 	var user_id int64
 	err := row.Scan(&user_id)
 	return user_id, err
+}
+
+const GetUserLanguage = `-- name: GetUserLanguage :one
+SELECT language FROM users
+WHERE user_id = $1
+`
+
+// Retrieve user's language preference for private responses (Feature 008)
+func (q *Queries) GetUserLanguage(ctx context.Context, userID int64) (*string, error) {
+	row := q.db.QueryRow(ctx, GetUserLanguage, userID)
+	var language *string
+	err := row.Scan(&language)
+	return language, err
 }
 
 const GetUserOverride = `-- name: GetUserOverride :one
@@ -542,6 +885,37 @@ func (q *Queries) IsGroupPaused(ctx context.Context, chatID int64) (IsGroupPause
 	return i, err
 }
 
+const ListAllGroupLanguages = `-- name: ListAllGroupLanguages :many
+SELECT chat_id, language FROM groups
+ORDER BY chat_id
+`
+
+type ListAllGroupLanguagesRow struct {
+	ChatID   int64  `json:"chat_id"`
+	Language string `json:"language"`
+}
+
+// Get language preferences for all groups (for cache initialization)
+func (q *Queries) ListAllGroupLanguages(ctx context.Context) ([]ListAllGroupLanguagesRow, error) {
+	rows, err := q.db.Query(ctx, ListAllGroupLanguages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllGroupLanguagesRow{}
+	for rows.Next() {
+		var i ListAllGroupLanguagesRow
+		if err := rows.Scan(&i.ChatID, &i.Language); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const RecordMessage = `-- name: RecordMessage :exec
 
 
@@ -564,6 +938,68 @@ type RecordMessageParams struct {
 func (q *Queries) RecordMessage(ctx context.Context, arg RecordMessageParams) error {
 	_, err := q.db.Exec(ctx, RecordMessage, arg.UserID, arg.ChatID, arg.CharCount)
 	return err
+}
+
+const RecordSyncEvent = `-- name: RecordSyncEvent :one
+INSERT INTO sync_events (
+    metadata_id,
+    event_type,
+    started_at,
+    completed_at,
+    status,
+    error_message,
+    members_processed,
+    members_added,
+    members_updated,
+    members_removed
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+)
+RETURNING id, metadata_id, event_type, started_at, completed_at, status, error_message, members_processed, members_added, members_updated, members_removed
+`
+
+type RecordSyncEventParams struct {
+	MetadataID       int64              `json:"metadata_id"`
+	EventType        string             `json:"event_type"`
+	StartedAt        pgtype.Timestamptz `json:"started_at"`
+	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
+	Status           string             `json:"status"`
+	ErrorMessage     *string            `json:"error_message"`
+	MembersProcessed *int32             `json:"members_processed"`
+	MembersAdded     *int32             `json:"members_added"`
+	MembersUpdated   *int32             `json:"members_updated"`
+	MembersRemoved   *int32             `json:"members_removed"`
+}
+
+// Create audit trail entry for sync operation
+func (q *Queries) RecordSyncEvent(ctx context.Context, arg RecordSyncEventParams) (SyncEvent, error) {
+	row := q.db.QueryRow(ctx, RecordSyncEvent,
+		arg.MetadataID,
+		arg.EventType,
+		arg.StartedAt,
+		arg.CompletedAt,
+		arg.Status,
+		arg.ErrorMessage,
+		arg.MembersProcessed,
+		arg.MembersAdded,
+		arg.MembersUpdated,
+		arg.MembersRemoved,
+	)
+	var i SyncEvent
+	err := row.Scan(
+		&i.ID,
+		&i.MetadataID,
+		&i.EventType,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Status,
+		&i.ErrorMessage,
+		&i.MembersProcessed,
+		&i.MembersAdded,
+		&i.MembersUpdated,
+		&i.MembersRemoved,
+	)
+	return i, err
 }
 
 const RemoveUserOverride = `-- name: RemoveUserOverride :exec
@@ -609,6 +1045,23 @@ func (q *Queries) ResetWindowMessagesForAll(ctx context.Context, chatID int64) e
 	return err
 }
 
+const SetGroupLanguage = `-- name: SetGroupLanguage :exec
+UPDATE groups
+SET language = $2, updated_at = NOW()
+WHERE chat_id = $1
+`
+
+type SetGroupLanguageParams struct {
+	ChatID   int64  `json:"chat_id"`
+	Language string `json:"language"`
+}
+
+// Set the language preference for a group
+func (q *Queries) SetGroupLanguage(ctx context.Context, arg SetGroupLanguageParams) error {
+	_, err := q.db.Exec(ctx, SetGroupLanguage, arg.ChatID, arg.Language)
+	return err
+}
+
 const SetGroupPaused = `-- name: SetGroupPaused :exec
 
 UPDATE groups
@@ -628,6 +1081,23 @@ type SetGroupPausedParams struct {
 // Pause or unpause rate limiting for a group
 func (q *Queries) SetGroupPaused(ctx context.Context, arg SetGroupPausedParams) error {
 	_, err := q.db.Exec(ctx, SetGroupPaused, arg.ChatID, arg.Paused, arg.ResumeAt)
+	return err
+}
+
+const SetUserLanguage = `-- name: SetUserLanguage :exec
+UPDATE users
+SET language = $2
+WHERE user_id = $1
+`
+
+type SetUserLanguageParams struct {
+	UserID   int64   `json:"user_id"`
+	Language *string `json:"language"`
+}
+
+// Set the language preference for a user (Feature 009)
+func (q *Queries) SetUserLanguage(ctx context.Context, arg SetUserLanguageParams) error {
+	_, err := q.db.Exec(ctx, SetUserLanguage, arg.UserID, arg.Language)
 	return err
 }
 
@@ -683,6 +1153,41 @@ func (q *Queries) SetWindowEnabled(ctx context.Context, arg SetWindowEnabledPara
 	return err
 }
 
+const UpdateSyncMetadata = `-- name: UpdateSyncMetadata :exec
+UPDATE sync_metadata SET
+    sync_status = $2,
+    last_sync_at = $3,
+    next_sync_at = $4,
+    total_members = $5,
+    failed_attempts = $6,
+    last_error = $7
+WHERE chat_id = $1
+`
+
+type UpdateSyncMetadataParams struct {
+	ChatID         int64              `json:"chat_id"`
+	SyncStatus     string             `json:"sync_status"`
+	LastSyncAt     pgtype.Timestamptz `json:"last_sync_at"`
+	NextSyncAt     pgtype.Timestamptz `json:"next_sync_at"`
+	TotalMembers   *int32             `json:"total_members"`
+	FailedAttempts *int32             `json:"failed_attempts"`
+	LastError      *string            `json:"last_error"`
+}
+
+// Update sync metadata after sync operation
+func (q *Queries) UpdateSyncMetadata(ctx context.Context, arg UpdateSyncMetadataParams) error {
+	_, err := q.db.Exec(ctx, UpdateSyncMetadata,
+		arg.ChatID,
+		arg.SyncStatus,
+		arg.LastSyncAt,
+		arg.NextSyncAt,
+		arg.TotalMembers,
+		arg.FailedAttempts,
+		arg.LastError,
+	)
+	return err
+}
+
 const UpdateWindowSlot = `-- name: UpdateWindowSlot :exec
 INSERT INTO window_slots (chat_id, slot_id, char_limit, duration_value, duration_unit, window_duration, enabled, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
@@ -720,6 +1225,65 @@ func (q *Queries) UpdateWindowSlot(ctx context.Context, arg UpdateWindowSlotPara
 	return err
 }
 
+const UpsertGroupMembership = `-- name: UpsertGroupMembership :one
+INSERT INTO group_memberships (
+    chat_id,
+    user_id,
+    status,
+    joined_at,
+    left_at,
+    is_admin,
+    can_send_messages,
+    updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, NOW()
+)
+ON CONFLICT (chat_id, user_id) DO UPDATE SET
+    status = EXCLUDED.status,
+    left_at = EXCLUDED.left_at,
+    is_admin = EXCLUDED.is_admin,
+    can_send_messages = EXCLUDED.can_send_messages,
+    updated_at = NOW()
+WHERE group_memberships.updated_at < EXCLUDED.updated_at
+RETURNING id, chat_id, user_id, status, joined_at, left_at, updated_at, is_admin, can_send_messages
+`
+
+type UpsertGroupMembershipParams struct {
+	ChatID          int64              `json:"chat_id"`
+	UserID          int64              `json:"user_id"`
+	Status          string             `json:"status"`
+	JoinedAt        pgtype.Timestamptz `json:"joined_at"`
+	LeftAt          pgtype.Timestamptz `json:"left_at"`
+	IsAdmin         bool               `json:"is_admin"`
+	CanSendMessages bool               `json:"can_send_messages"`
+}
+
+// Insert or update membership record (idempotent)
+func (q *Queries) UpsertGroupMembership(ctx context.Context, arg UpsertGroupMembershipParams) (GroupMembership, error) {
+	row := q.db.QueryRow(ctx, UpsertGroupMembership,
+		arg.ChatID,
+		arg.UserID,
+		arg.Status,
+		arg.JoinedAt,
+		arg.LeftAt,
+		arg.IsAdmin,
+		arg.CanSendMessages,
+	)
+	var i GroupMembership
+	err := row.Scan(
+		&i.ID,
+		&i.ChatID,
+		&i.UserID,
+		&i.Status,
+		&i.JoinedAt,
+		&i.LeftAt,
+		&i.UpdatedAt,
+		&i.IsAdmin,
+		&i.CanSendMessages,
+	)
+	return i, err
+}
+
 const UpsertUser = `-- name: UpsertUser :one
 
 
@@ -730,7 +1294,7 @@ VALUES ($1, $2, NOW(), NOW())
 ON CONFLICT (user_id) DO UPDATE
 SET username = EXCLUDED.username,
     last_seen = NOW()
-RETURNING user_id, username, first_seen, last_seen
+RETURNING user_id, username, first_seen, last_seen, language
 `
 
 type UpsertUserParams struct {
@@ -759,6 +1323,7 @@ func (q *Queries) UpsertUser(ctx context.Context, arg UpsertUserParams) (User, e
 		&i.Username,
 		&i.FirstSeen,
 		&i.LastSeen,
+		&i.Language,
 	)
 	return i, err
 }

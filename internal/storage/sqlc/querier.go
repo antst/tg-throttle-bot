@@ -19,6 +19,8 @@ type Querier interface {
 	// Window B: 1000 chars/1 hour (disabled by default)
 	// Window C: 10000 chars/1 day (disabled by default)
 	CreateDefaultWindows(ctx context.Context, chatID int64) error
+	// Initialize sync metadata for a new group
+	CreateSyncMetadata(ctx context.Context, chatID int64) (SyncMetadatum, error)
 	// ============================================================================
 	// LEGACY Statistics Queries (DISABLED - table 'messages' removed)
 	// ============================================================================
@@ -28,17 +30,23 @@ type Querier interface {
 	// ============================================================================
 	// Create group record if it doesn't exist (required for foreign key constraints)
 	EnsureGroup(ctx context.Context, chatID int64) error
+	// Create or update group record with username (Feature 011: proactive group records)
+	EnsureGroupWithUsername(ctx context.Context, arg EnsureGroupWithUsernameParams) error
 	// Create user record if it doesn't exist (required for foreign key constraints)
 	// Also updates username and last_seen on every call (for username harvesting)
 	EnsureUser(ctx context.Context, arg EnsureUserParams) error
+	// Get all active members in a group
+	GetActiveMembersInGroup(ctx context.Context, chatID int64) ([]GetActiveMembersInGroupRow, error)
 	// Get all configured groups (simple messages design - no enabled column)
 	GetAllGroups(ctx context.Context) ([]int64, error)
 	// Get all manual overrides for a chat
 	GetAllOverrides(ctx context.Context, chatID int64) ([]GetAllOverridesRow, error)
-	// Get all windows for a chat (for /showwindows command)
+	// Get all windows for a chat (for /config command)
 	GetAllWindows(ctx context.Context, chatID int64) ([]WindowSlot, error)
 	// Get all enabled windows for evaluation
 	GetEnabledWindows(ctx context.Context, chatID int64) ([]GetEnabledWindowsRow, error)
+	// Look up group by @username for group parameter parsing (Feature 008)
+	GetGroupByUsername(ctx context.Context, lower string) (GetGroupByUsernameRow, error)
 	// ============================================================================
 	// LEGACY Restriction Management Queries (DISABLED - table removed in migration 000003)
 	// ============================================================================
@@ -66,8 +74,31 @@ type Querier interface {
 	// ============================================================================
 	// Get rate limit configuration for a group
 	GetGroupConfig(ctx context.Context, chatID int64) (Group, error)
+	// ============================================================================
+	// Language Configuration Queries (Feature 007)
+	// ============================================================================
+	// Get the configured language for a group
+	GetGroupLanguage(ctx context.Context, chatID int64) (string, error)
+	// ============================================================================
+	// LEGACY Queries (DISABLED - columns removed from groups table in migration 000003)
+	// ============================================================================
+	// LEGACY: GetChatLimit - columns 'char_limit', 'window_duration' removed from groups table
+	// LEGACY: SetChatLimit - columns removed from groups table
+	// ============================================================================
+	// Group Membership Tracking Queries (Feature 011)
+	// ============================================================================
+	// Get membership record for user in group
+	GetGroupMembership(ctx context.Context, arg GetGroupMembershipParams) (GroupMembership, error)
+	// Get groups that need periodic sync (next_sync_at < NOW)
+	GetGroupsNeedingSync(ctx context.Context, limit int32) ([]GetGroupsNeedingSyncRow, error)
+	// Get recent sync events for monitoring (last N events)
+	GetRecentSyncEvents(ctx context.Context, limit int32) ([]GetRecentSyncEventsRow, error)
+	// Find memberships not updated in last 48 hours (for metrics)
+	GetStaleGroupMemberships(ctx context.Context) ([]GetStaleGroupMembershipsRow, error)
 	// Resolve @username to user_id (case-insensitive lookup)
 	GetUserByUsername(ctx context.Context, lower string) (int64, error)
+	// Retrieve user's language preference for private responses (Feature 008)
+	GetUserLanguage(ctx context.Context, userID int64) (*string, error)
 	// GetMostViolatedWindow removed - no restriction table in simple design
 	// Violations are not tracked; messages are just deleted when over limit
 	// ============================================================================
@@ -108,6 +139,8 @@ type Querier interface {
 	GetWindowUsage(ctx context.Context, arg GetWindowUsageParams) (int32, error)
 	// Check if a group's rate limiting is paused
 	IsGroupPaused(ctx context.Context, chatID int64) (IsGroupPausedRow, error)
+	// Get language preferences for all groups (for cache initialization)
+	ListAllGroupLanguages(ctx context.Context) ([]ListAllGroupLanguagesRow, error)
 	// ============================================================================
 	// Multi-Window State Tracking Queries
 	// ============================================================================
@@ -115,21 +148,31 @@ type Querier interface {
 	// Current usage is calculated on-demand via GetWindowUsage
 	// Record a message for sliding window calculation (one row per message, shared across all windows)
 	RecordMessage(ctx context.Context, arg RecordMessageParams) error
+	// Create audit trail entry for sync operation
+	RecordSyncEvent(ctx context.Context, arg RecordSyncEventParams) (SyncEvent, error)
 	// Remove manual override (return to rate limiter control)
 	RemoveUserOverride(ctx context.Context, arg RemoveUserOverrideParams) error
 	// Reset all messages for a user in a chat (affects all windows)
 	ResetWindowMessages(ctx context.Context, arg ResetWindowMessagesParams) error
 	// Reset all messages for all users in a chat (affects all windows)
 	ResetWindowMessagesForAll(ctx context.Context, chatID int64) error
+	// Set the language preference for a group
+	SetGroupLanguage(ctx context.Context, arg SetGroupLanguageParams) error
 	// LEGACY: UpsertGroupConfig - columns char_limit, duration_value, duration_unit, window_duration removed from groups table
 	// Pause or unpause rate limiting for a group
 	SetGroupPaused(ctx context.Context, arg SetGroupPausedParams) error
+	// Set the language preference for a user (Feature 009)
+	SetUserLanguage(ctx context.Context, arg SetUserLanguageParams) error
 	// Set manual override state for a user
 	SetUserOverride(ctx context.Context, arg SetUserOverrideParams) error
 	// Enable or disable a window (/enablewindow, /disablewindow commands)
 	SetWindowEnabled(ctx context.Context, arg SetWindowEnabledParams) error
+	// Update sync metadata after sync operation
+	UpdateSyncMetadata(ctx context.Context, arg UpdateSyncMetadataParams) error
 	// Update window configuration (/setwindow command)
 	UpdateWindowSlot(ctx context.Context, arg UpdateWindowSlotParams) error
+	// Insert or update membership record (idempotent)
+	UpsertGroupMembership(ctx context.Context, arg UpsertGroupMembershipParams) (GroupMembership, error)
 	// Complete SQLC queries for all Storage interface methods
 	// ============================================================================
 	// LEGACY Message Tracking Queries (DISABLED - table removed in migration 000003)

@@ -51,6 +51,10 @@ type MultiWindowStorage interface {
 	GetUserByUsername(ctx context.Context, username string) (int64, error)
 	GetUsernameByUserID(ctx context.Context, userID int64) (string, error)
 
+	// Group management (username harvesting and resolution)
+	GetGroupByUsername(ctx context.Context, username string) (int64, error)
+	EnsureGroupWithUsername(ctx context.Context, chatID int64, username string) error // Feature 011: proactive group record creation
+
 	// Window slot configuration
 	CreateDefaultWindows(ctx context.Context, chatID int64) error
 	GetEnabledWindows(ctx context.Context, chatID int64) ([]*WindowSlot, error)
@@ -77,6 +81,7 @@ type MultiWindowStorage interface {
 
 	// Group pause/resume (blacklist - temporary disable all rate limiting)
 	IsGroupPaused(ctx context.Context, chatID int64) (bool, error)
+	GetGroupPausedUntil(ctx context.Context, chatID int64) (*time.Time, error)
 	SetGroupPaused(ctx context.Context, chatID int64, paused bool, resumeAt *time.Time) error
 
 	// Manual user overrides (3-state: nil=follow rate limiter, true=whitelist, false=blacklist)
@@ -85,6 +90,19 @@ type MultiWindowStorage interface {
 	RemoveUserOverride(ctx context.Context, chatID, userID int64) error
 	GetAllOverrides(ctx context.Context, chatID int64) ([]*UserOverride, error)
 	CleanupExpiredOverrides(ctx context.Context) error
+
+	// Language configuration (Feature 007)
+	GetGroupLanguage(ctx context.Context, chatID int64) (string, error)
+	SetGroupLanguage(ctx context.Context, chatID int64, language string) error
+	ListAllGroupLanguages(ctx context.Context) (map[int64]string, error)
+	EnsureGroup(ctx context.Context, chatID int64) error
+
+	// User language configuration (Feature 009)
+	GetUserLanguage(ctx context.Context, userID int64) (*string, error)
+	SetUserLanguage(ctx context.Context, userID int64, language string) error
+
+	// Group management
+	GetAllGroups(ctx context.Context) ([]int64, error)
 }
 
 // UserWindowStat represents per-window usage statistics for /mystatus command

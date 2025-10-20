@@ -75,7 +75,27 @@ func (s *RateLimitStorage) GetUsernameByUserID(ctx context.Context, userID int64
 	}
 
 	return *username, nil
-} // ============================================================================
+}
+
+// GetGroupByUsername resolves @groupname to group_id (case-insensitive)
+// Returns error if groupname not found or empty
+func (s *RateLimitStorage) GetGroupByUsername(ctx context.Context, username string) (int64, error) {
+	if username == "" {
+		return 0, fmt.Errorf("group username cannot be empty")
+	}
+
+	row, err := s.store.GetGroupByUsername(ctx, username)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, fmt.Errorf("group with username '@%s' not found (you must be managing this group)", username)
+		}
+		return 0, fmt.Errorf("failed to resolve group username: %w", err)
+	}
+
+	return row.ChatID, nil
+}
+
+// ============================================================================
 // Simple Messages-Based Methods (Feature 006 Refactoring)
 // ============================================================================
 
@@ -353,6 +373,21 @@ func (s *RateLimitStorage) IsGroupPaused(ctx context.Context, chatID int64) (boo
 	return result.Paused, nil
 }
 
+// GetGroupPausedUntil returns the timestamp when rate limiting will resume (if paused)
+func (s *RateLimitStorage) GetGroupPausedUntil(ctx context.Context, chatID int64) (*time.Time, error) {
+	result, err := s.store.IsGroupPaused(ctx, chatID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get group paused until: %w", err)
+	}
+	if !result.Paused || !result.ResumeAt.Valid {
+		return nil, nil
+	}
+	return &result.ResumeAt.Time, nil
+}
+
 // SetGroupPaused sets the paused state for a group
 func (s *RateLimitStorage) SetGroupPaused(ctx context.Context, chatID int64, paused bool, resumeAt *time.Time) error {
 	// Ensure group exists first
@@ -488,4 +523,386 @@ func (s *RateLimitStorage) GetAllOverrides(ctx context.Context, chatID int64) ([
 // CleanupExpiredOverrides removes expired overrides (where expires_at < NOW)
 func (s *RateLimitStorage) CleanupExpiredOverrides(ctx context.Context) error {
 	return s.store.CleanupExpiredOverrides(ctx)
+}
+
+// ============================================================================
+// Language Configuration Methods (Feature 007)
+// ============================================================================
+
+// GetGroupLanguage returns the configured language for a group
+func (s *RateLimitStorage) GetGroupLanguage(ctx context.Context, chatID int64) (string, error) {
+	language, err := s.store.GetGroupLanguage(ctx, chatID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Group doesn't exist yet, return default language
+			return "en", nil
+		}
+		return "", fmt.Errorf("failed to get group language: %w", err)
+	}
+	return language, nil
+}
+
+// SetGroupLanguage sets the language preference for a group
+func (s *RateLimitStorage) SetGroupLanguage(ctx context.Context, chatID int64, language string) error {
+	// Ensure group exists first
+	if err := s.ensureGroupExists(ctx, chatID); err != nil {
+		return fmt.Errorf("failed to ensure group exists: %w", err)
+	}
+
+	return s.store.SetGroupLanguage(ctx, sqlc.SetGroupLanguageParams{
+		ChatID:   chatID,
+		Language: language,
+	})
+}
+
+// ListAllGroupLanguages returns language preferences for all groups (for cache initialization)
+func (s *RateLimitStorage) ListAllGroupLanguages(ctx context.Context) (map[int64]string, error) {
+	rows, err := s.store.ListAllGroupLanguages(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list group languages: %w", err)
+	}
+
+	languages := make(map[int64]string, len(rows))
+	for _, row := range rows {
+		languages[row.ChatID] = row.Language
+	}
+	return languages, nil
+}
+
+// EnsureGroup creates a group record if it doesn't exist
+func (s *RateLimitStorage) EnsureGroup(ctx context.Context, chatID int64) error {
+	return s.store.EnsureGroup(ctx, chatID)
+}
+
+// GetUserLanguage returns the configured language for a user
+// Returns nil if user has no language preference set
+func (s *RateLimitStorage) GetUserLanguage(ctx context.Context, userID int64) (*string, error) {
+	return s.store.GetUserLanguage(ctx, userID)
+}
+
+// SetUserLanguage sets the language preference for a user
+func (s *RateLimitStorage) SetUserLanguage(ctx context.Context, userID int64, language string) error {
+	return s.store.SetUserLanguage(ctx, sqlc.SetUserLanguageParams{
+		UserID:   userID,
+		Language: &language,
+	})
+}
+
+// EnsureGroupWithUsername creates or updates a group record with username (Feature 011)
+func (s *RateLimitStorage) EnsureGroupWithUsername(ctx context.Context, chatID int64, username string) error {
+	return s.store.EnsureGroupWithUsername(ctx, sqlc.EnsureGroupWithUsernameParams{
+		ChatID:   chatID,
+		Username: &username,
+	})
+}
+
+// ============================================================================
+// Proactive Member Sync Methods (Feature 011)
+// ============================================================================
+
+// UpsertGroupMembership creates or updates a group membership record
+func (s *RateLimitStorage) UpsertGroupMembership(ctx context.Context, params UpsertGroupMembershipParams) (GroupMembership, error) {
+	sqlcParams := sqlc.UpsertGroupMembershipParams{
+		ChatID:          params.ChatID,
+		UserID:          params.UserID,
+		Status:          params.Status,
+		JoinedAt:        pgtype.Timestamptz{Time: params.JoinedAt, Valid: true},
+		LeftAt:          pgtype.Timestamptz{},
+		IsAdmin:         params.IsAdmin,
+		CanSendMessages: params.CanSendMessages,
+	}
+
+	if params.LeftAt != nil {
+		sqlcParams.LeftAt = pgtype.Timestamptz{Time: *params.LeftAt, Valid: true}
+	}
+
+	membership, err := s.store.UpsertGroupMembership(ctx, sqlcParams)
+	if err != nil {
+		return GroupMembership{}, fmt.Errorf("failed to upsert group membership: %w", err)
+	}
+
+	result := GroupMembership{
+		ID:              membership.ID,
+		ChatID:          membership.ChatID,
+		UserID:          membership.UserID,
+		Status:          membership.Status,
+		JoinedAt:        membership.JoinedAt.Time,
+		LeftAt:          nil,
+		UpdatedAt:       membership.UpdatedAt.Time,
+		IsAdmin:         membership.IsAdmin,
+		CanSendMessages: membership.CanSendMessages,
+	}
+
+	if membership.LeftAt.Valid {
+		result.LeftAt = &membership.LeftAt.Time
+	}
+
+	return result, nil
+}
+
+// CreateSyncMetadata initializes sync metadata for a new group
+func (s *RateLimitStorage) CreateSyncMetadata(ctx context.Context, chatID int64) (SyncMetadata, error) {
+	metadata, err := s.store.CreateSyncMetadata(ctx, chatID)
+	if err != nil {
+		return SyncMetadata{}, fmt.Errorf("failed to create sync metadata: %w", err)
+	}
+
+	result := SyncMetadata{
+		ID:             metadata.ID,
+		ChatID:         metadata.ChatID,
+		SyncStatus:     metadata.SyncStatus,
+		LastSyncAt:     nil,
+		NextSyncAt:     nil,
+		CreatedAt:      metadata.CreatedAt.Time,
+		UpdatedAt:      metadata.UpdatedAt.Time,
+		TotalMembers:   0,
+		FailedAttempts: 0,
+		LastError:      nil,
+	}
+
+	if metadata.LastSyncAt.Valid {
+		result.LastSyncAt = &metadata.LastSyncAt.Time
+	}
+	if metadata.NextSyncAt.Valid {
+		result.NextSyncAt = &metadata.NextSyncAt.Time
+	}
+	if metadata.TotalMembers != nil {
+		result.TotalMembers = int(*metadata.TotalMembers)
+	}
+	if metadata.FailedAttempts != nil {
+		result.FailedAttempts = int(*metadata.FailedAttempts)
+	}
+	if metadata.LastError != nil {
+		result.LastError = metadata.LastError
+	}
+
+	return result, nil
+}
+
+// UpdateSyncMetadata updates sync metadata after a sync operation
+func (s *RateLimitStorage) UpdateSyncMetadata(ctx context.Context, params UpdateSyncMetadataParams) error {
+	var totalMembers *int32
+	if params.TotalMembers > 0 {
+		val := int32(params.TotalMembers)
+		totalMembers = &val
+	}
+
+	var failedAttempts *int32
+	if params.FailedAttempts > 0 {
+		val := int32(params.FailedAttempts)
+		failedAttempts = &val
+	}
+
+	sqlcParams := sqlc.UpdateSyncMetadataParams{
+		ChatID:         params.ChatID,
+		SyncStatus:     params.SyncStatus,
+		LastSyncAt:     pgtype.Timestamptz{},
+		NextSyncAt:     pgtype.Timestamptz{},
+		TotalMembers:   totalMembers,
+		FailedAttempts: failedAttempts,
+		LastError:      params.LastError,
+	}
+
+	if params.LastSyncAt != nil {
+		sqlcParams.LastSyncAt = pgtype.Timestamptz{Time: *params.LastSyncAt, Valid: true}
+	}
+	if params.NextSyncAt != nil {
+		sqlcParams.NextSyncAt = pgtype.Timestamptz{Time: *params.NextSyncAt, Valid: true}
+	}
+
+	return s.store.UpdateSyncMetadata(ctx, sqlcParams)
+}
+
+// RecordSyncEvent creates an audit trail entry for a sync operation
+func (s *RateLimitStorage) RecordSyncEvent(ctx context.Context, params RecordSyncEventParams) (SyncEvent, error) {
+	var membersProcessed, membersAdded, membersUpdated, membersRemoved *int32
+
+	if params.MembersProcessed > 0 {
+		val := int32(params.MembersProcessed)
+		membersProcessed = &val
+	}
+	if params.MembersAdded > 0 {
+		val := int32(params.MembersAdded)
+		membersAdded = &val
+	}
+	if params.MembersUpdated > 0 {
+		val := int32(params.MembersUpdated)
+		membersUpdated = &val
+	}
+	if params.MembersRemoved > 0 {
+		val := int32(params.MembersRemoved)
+		membersRemoved = &val
+	}
+
+	sqlcParams := sqlc.RecordSyncEventParams{
+		MetadataID:       params.MetadataID,
+		EventType:        params.EventType,
+		StartedAt:        pgtype.Timestamptz{Time: params.StartedAt, Valid: true},
+		CompletedAt:      pgtype.Timestamptz{},
+		Status:           params.Status,
+		ErrorMessage:     params.ErrorMessage,
+		MembersProcessed: membersProcessed,
+		MembersAdded:     membersAdded,
+		MembersUpdated:   membersUpdated,
+		MembersRemoved:   membersRemoved,
+	}
+
+	if params.CompletedAt != nil {
+		sqlcParams.CompletedAt = pgtype.Timestamptz{Time: *params.CompletedAt, Valid: true}
+	}
+
+	event, err := s.store.RecordSyncEvent(ctx, sqlcParams)
+	if err != nil {
+		return SyncEvent{}, fmt.Errorf("failed to record sync event: %w", err)
+	}
+
+	result := SyncEvent{
+		ID:               event.ID,
+		MetadataID:       event.MetadataID,
+		EventType:        event.EventType,
+		StartedAt:        event.StartedAt.Time,
+		CompletedAt:      nil,
+		Status:           event.Status,
+		ErrorMessage:     event.ErrorMessage,
+		MembersProcessed: 0,
+		MembersAdded:     0,
+		MembersUpdated:   0,
+		MembersRemoved:   0,
+	}
+
+	if event.CompletedAt.Valid {
+		result.CompletedAt = &event.CompletedAt.Time
+	}
+	if event.MembersProcessed != nil {
+		result.MembersProcessed = int(*event.MembersProcessed)
+	}
+	if event.MembersAdded != nil {
+		result.MembersAdded = int(*event.MembersAdded)
+	}
+	if event.MembersUpdated != nil {
+		result.MembersUpdated = int(*event.MembersUpdated)
+	}
+	if event.MembersRemoved != nil {
+		result.MembersRemoved = int(*event.MembersRemoved)
+	}
+
+	return result, nil
+}
+
+// GetGroupsNeedingSync retrieves groups that need periodic sync (next_sync_at <= NOW)
+func (s *RateLimitStorage) GetGroupsNeedingSync(ctx context.Context) ([]SyncMetadata, error) {
+	rows, err := s.store.GetGroupsNeedingSync(ctx, 1000) // Limit to 1000 groups per iteration
+	if err != nil {
+		return nil, fmt.Errorf("failed to get groups needing sync: %w", err)
+	}
+
+	results := make([]SyncMetadata, 0, len(rows))
+	for _, row := range rows {
+		metadata := SyncMetadata{
+			ID:             row.ID,
+			ChatID:         row.ChatID,
+			SyncStatus:     row.SyncStatus,
+			LastSyncAt:     nil,
+			NextSyncAt:     nil,
+			CreatedAt:      row.CreatedAt.Time,
+			UpdatedAt:      row.UpdatedAt.Time,
+			TotalMembers:   0,
+			FailedAttempts: 0,
+			LastError:      nil,
+		}
+
+		if row.LastSyncAt.Valid {
+			metadata.LastSyncAt = &row.LastSyncAt.Time
+		}
+		if row.NextSyncAt.Valid {
+			metadata.NextSyncAt = &row.NextSyncAt.Time
+		}
+		if row.TotalMembers != nil {
+			metadata.TotalMembers = int(*row.TotalMembers)
+		}
+		if row.FailedAttempts != nil {
+			metadata.FailedAttempts = int(*row.FailedAttempts)
+		}
+		if row.LastError != nil {
+			metadata.LastError = row.LastError
+		}
+
+		results = append(results, metadata)
+	}
+
+	return results, nil
+}
+
+// GetStaleGroupMemberships retrieves memberships that haven't been updated recently
+func (s *RateLimitStorage) GetStaleGroupMemberships(ctx context.Context, chatID int64, staleDuration int32) ([]GroupMembership, error) {
+	// Note: Current SQLC query doesn't support parameters, returns all stale memberships
+	// We filter by chatID in memory for now
+	rows, err := s.store.GetStaleGroupMemberships(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stale group memberships: %w", err)
+	}
+
+	results := make([]GroupMembership, 0)
+	for _, row := range rows {
+		// Filter by chat_id
+		if row.ChatID != chatID {
+			continue
+		}
+
+		membership := GroupMembership{
+			ID:              row.ID,
+			ChatID:          row.ChatID,
+			UserID:          row.UserID,
+			Status:          row.Status,
+			JoinedAt:        row.JoinedAt.Time,
+			LeftAt:          nil,
+			IsAdmin:         row.IsAdmin,
+			CanSendMessages: row.CanSendMessages,
+			UpdatedAt:       row.UpdatedAt.Time,
+		}
+
+		if row.LeftAt.Valid {
+			membership.LeftAt = &row.LeftAt.Time
+		}
+
+		results = append(results, membership)
+	}
+
+	return results, nil
+}
+
+// UpsertGroupMembershipParams holds parameters for creating/updating a membership
+type UpsertGroupMembershipParams struct {
+	ChatID          int64
+	UserID          int64
+	Status          string
+	JoinedAt        time.Time
+	LeftAt          *time.Time
+	IsAdmin         bool
+	CanSendMessages bool
+}
+
+// UpdateSyncMetadataParams holds parameters for updating sync metadata
+type UpdateSyncMetadataParams struct {
+	ChatID         int64
+	SyncStatus     string
+	LastSyncAt     *time.Time
+	NextSyncAt     *time.Time
+	TotalMembers   int
+	FailedAttempts int
+	LastError      *string
+}
+
+// RecordSyncEventParams holds parameters for recording a sync event
+type RecordSyncEventParams struct {
+	MetadataID       int64
+	EventType        string
+	StartedAt        time.Time
+	CompletedAt      *time.Time
+	Status           string
+	ErrorMessage     *string
+	MembersProcessed int
+	MembersAdded     int
+	MembersUpdated   int
+	MembersRemoved   int
 }

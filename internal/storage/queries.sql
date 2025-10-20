@@ -80,6 +80,45 @@ SELECT paused, resume_at FROM groups
 WHERE chat_id = $1;
 
 -- ============================================================================
+-- Language Configuration Queries (Feature 007)
+-- ============================================================================
+
+-- name: GetGroupLanguage :one
+-- Get the configured language for a group
+SELECT language FROM groups
+WHERE chat_id = $1;
+
+-- name: SetGroupLanguage :exec
+-- Set the language preference for a group
+UPDATE groups
+SET language = $2, updated_at = NOW()
+WHERE chat_id = $1;
+
+-- name: ListAllGroupLanguages :many
+-- Get language preferences for all groups (for cache initialization)
+SELECT chat_id, language FROM groups
+ORDER BY chat_id;
+
+-- name: GetGroupByUsername :one
+-- Look up group by @username for group parameter parsing (Feature 008)
+SELECT chat_id, username, language
+FROM groups
+WHERE LOWER(username) = LOWER($1)
+  AND username IS NOT NULL
+  AND username != '';
+
+-- name: GetUserLanguage :one
+-- Retrieve user's language preference for private responses (Feature 008)
+SELECT language FROM users
+WHERE user_id = $1;
+
+-- name: SetUserLanguage :exec
+-- Set the language preference for a user (Feature 009)
+UPDATE users
+SET language = $2
+WHERE user_id = $1;
+
+-- ============================================================================
 -- LEGACY Statistics Queries (DISABLED - table 'messages' removed)
 -- ============================================================================
 
@@ -94,6 +133,16 @@ WHERE chat_id = $1;
 INSERT INTO groups (chat_id)
 VALUES ($1)
 ON CONFLICT (chat_id) DO NOTHING;
+
+-- name: EnsureGroupWithUsername :exec
+-- Create or update group record with username (Feature 011: proactive group records)
+INSERT INTO groups (chat_id, username)
+VALUES ($1, $2)
+ON CONFLICT (chat_id) DO UPDATE
+SET username = CASE 
+    WHEN EXCLUDED.username IS NOT NULL THEN EXCLUDED.username 
+    ELSE groups.username 
+END;
 
 -- name: EnsureUser :exec
 -- Create user record if it doesn't exist (required for foreign key constraints)
@@ -135,11 +184,8 @@ WHERE chat_id = $1 AND enabled = TRUE
 ORDER BY slot_id;
 
 -- name: GetAllWindows :many
--- Get all windows for a chat (for /showwindows command)
-SELECT *
-FROM window_slots
-WHERE chat_id = $1
-ORDER BY slot_id;
+-- Get all windows for a chat (for /config command)
+SELECT * FROM window_slots WHERE chat_id = $1 ORDER BY slot_id;
 
 -- name: GetWindowSlot :one
 -- Get specific window configuration
@@ -304,3 +350,110 @@ WHERE expires_at IS NOT NULL AND expires_at < CURRENT_TIMESTAMP;
 
 -- LEGACY: GetChatLimit - columns 'char_limit', 'window_duration' removed from groups table
 -- LEGACY: SetChatLimit - columns removed from groups table
+
+-- ============================================================================
+-- Group Membership Tracking Queries (Feature 011)
+-- ============================================================================
+
+-- name: GetGroupMembership :one
+-- Get membership record for user in group
+SELECT * FROM group_memberships
+WHERE chat_id = $1 AND user_id = $2
+LIMIT 1;
+
+-- name: UpsertGroupMembership :one
+-- Insert or update membership record (idempotent)
+INSERT INTO group_memberships (
+    chat_id,
+    user_id,
+    status,
+    joined_at,
+    left_at,
+    is_admin,
+    can_send_messages,
+    updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, NOW()
+)
+ON CONFLICT (chat_id, user_id) DO UPDATE SET
+    status = EXCLUDED.status,
+    left_at = EXCLUDED.left_at,
+    is_admin = EXCLUDED.is_admin,
+    can_send_messages = EXCLUDED.can_send_messages,
+    updated_at = NOW()
+WHERE group_memberships.updated_at < EXCLUDED.updated_at
+RETURNING *;
+
+-- name: GetActiveMembersInGroup :many
+-- Get all active members in a group
+SELECT u.user_id, u.username
+FROM group_memberships gm
+JOIN users u ON gm.user_id = u.user_id
+WHERE gm.chat_id = $1 AND gm.status = 'active';
+
+-- name: GetStaleGroupMemberships :many
+-- Find memberships not updated in last 48 hours (for metrics)
+SELECT gm.*, g.chat_id
+FROM group_memberships gm
+JOIN groups g ON gm.chat_id = g.chat_id
+WHERE gm.status = 'active' 
+  AND gm.updated_at < NOW() - INTERVAL '48 hours';
+
+-- name: CreateSyncMetadata :one
+-- Initialize sync metadata for a new group
+INSERT INTO sync_metadata (
+    chat_id,
+    sync_status,
+    next_sync_at
+) VALUES (
+    $1, 'pending', NOW() + INTERVAL '24 hours'
+)
+ON CONFLICT (chat_id) DO NOTHING
+RETURNING *;
+
+-- name: UpdateSyncMetadata :exec
+-- Update sync metadata after sync operation
+UPDATE sync_metadata SET
+    sync_status = $2,
+    last_sync_at = $3,
+    next_sync_at = $4,
+    total_members = $5,
+    failed_attempts = $6,
+    last_error = $7
+WHERE chat_id = $1;
+
+-- name: GetGroupsNeedingSync :many
+-- Get groups that need periodic sync (next_sync_at < NOW)
+SELECT sm.*, g.chat_id
+FROM sync_metadata sm
+JOIN groups g ON sm.chat_id = g.chat_id
+WHERE sm.next_sync_at < NOW() 
+  AND sm.sync_status != 'in_progress'
+ORDER BY sm.next_sync_at ASC
+LIMIT $1;
+
+-- name: RecordSyncEvent :one
+-- Create audit trail entry for sync operation
+INSERT INTO sync_events (
+    metadata_id,
+    event_type,
+    started_at,
+    completed_at,
+    status,
+    error_message,
+    members_processed,
+    members_added,
+    members_updated,
+    members_removed
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+)
+RETURNING *;
+
+-- name: GetRecentSyncEvents :many
+-- Get recent sync events for monitoring (last N events)
+SELECT se.*, sm.chat_id
+FROM sync_events se
+JOIN sync_metadata sm ON se.metadata_id = sm.id
+ORDER BY se.started_at DESC
+LIMIT $1;

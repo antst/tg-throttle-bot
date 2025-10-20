@@ -1,0 +1,542 @@
+{
+  "language_changed": {
+    "description": "Confirmation message when language is successfully changed",
+    "other": "Язык изменён на русский"
+  },
+  "language_invalid": {
+    "description": "Error message for unsupported language",
+    "other": "Неверный язык. Поддерживаются: english (en), russian (ru), dutch (nl)"
+  },
+  "language_missing_param": {
+    "description": "Error when no language parameter provided",
+    "other": "Использование: /setlanguage <язык>\nПоддерживаются: english, russian, dutch"
+  },
+  "permission_denied": {
+    "description": "Generic permission denied error",
+    "other": "Только администраторы могут изменять настройки языка"
+  },
+  "permission_denied_admin_only": {
+    "description": "Command requires admin privileges",
+    "other": "Эта команда доступна только администраторам группы"
+  },
+  "database_error": {
+    "description": "Generic database operation error",
+    "other": "Не удалось сохранить настройку языка. Попробуйте снова"
+  },
+  "rate_limit_exceeded": {
+    "description": "User exceeded rate limit",
+    "other": "⚠️ Превышен лимит в окне {{.window}}: использовано {{.current}}/{{.limit}} символов"
+  },
+  "unknown_command": {
+    "description": "Error message for unknown/unrecognized commands",
+    "other": "❌ Неизвестная команда: {{.command}}\nИспользуйте /help для просмотра доступных команд"
+  },
+  "permission_lost": {
+    "description": "Notification when bot loses required permissions in a group",
+    "other": "⚠️ Ограничение скорости временно отключено.\n\nОтсутствуют разрешения: {{.permissions}}\n\nПредоставьте боту эти разрешения:\n• Может ограничивать участников\n• Может удалять сообщения\n\nОграничение скорости возобновится автоматически при восстановлении разрешений."
+  },
+  "permission_restored": {
+    "description": "Notification when bot regains required permissions",
+    "other": "✅ Разрешения восстановлены. Ограничение скорости активно."
+  },
+  "message_deleted": {
+    "description": "Message deleted due to rate limit",
+    "other": "Ваше сообщение удалено (превышен лимит)"
+  },
+  "window_set_success": {
+    "description": "Window configuration updated successfully",
+    "other": "✅ Окно {{.window}} настроено: {{.limit}} символов за {{.duration}}"
+  },
+  "window_set_error": {
+    "description": "Error setting window configuration",
+    "other": "❌ Не удалось настроить окно {{.window}}"
+  },
+  "window_enabled": {
+    "description": "Window enabled successfully",
+    "other": "✅ Окно {{.window}} включено"
+  },
+  "window_enabled_success": {
+    "description": "Window enabled successfully (alias)",
+    "other": "✅ Окно {{.window}} включено"
+  },
+  "window_disabled": {
+    "description": "Window disabled successfully",
+    "other": "✅ Окно {{.window}} выключено"
+  },
+  "window_disabled_success": {
+    "description": "Window disabled successfully (alias)",
+    "other": "✅ Окно {{.window}} выключено"
+  },
+  "window_enable_error": {
+    "description": "Error enabling window",
+    "other": "❌ Не удалось включить окно {{.window}}"
+  },
+  "window_disable_error": {
+    "description": "Error disabling window",
+    "other": "❌ Не удалось выключить окно {{.window}}"
+  },
+  "window_show_header": {
+    "description": "Header for window configuration display",
+    "other": "📊 Конфигурация лимитов\nЯзык: {{.language}}\n\n"
+  },
+  "window_show_entry": {
+    "description": "Single window entry in configuration display",
+    "other": "Окно {{.window}}: {{.limit}} симв./{{.duration}} [{{.status}}]"
+  },
+  "window_status_enabled": {
+    "description": "Window is enabled",
+    "other": "включено"
+  },
+  "window_status_disabled": {
+    "description": "Window is disabled",
+    "other": "выключено"
+  },
+  "window_show_none": {
+    "description": "No windows configured",
+    "other": "Окна не настроены"
+  },
+  "invalid_window_slot": {
+    "description": "Invalid window slot identifier",
+    "other": "Неверное окно. Используйте: a, b или c"
+  },
+  "invalid_limit": {
+    "description": "Invalid character limit value",
+    "other": "Неверный лимит символов. Должно быть положительное число"
+  },
+  "invalid_duration": {
+    "description": "Invalid duration format",
+    "other": "Неверный формат длительности. Формат: <значение><единица> (например, 30m, 2h, 7d)\nЕдиницы: m (минуты), h (часы), d (дни)\nДиапазон: 1-365"
+  },
+  "duration_out_of_range": {
+    "description": "Duration value out of allowed range",
+    "other": "Значение длительности вне диапазона. Должно быть от 1 до 365 {{.unit}}"
+  },
+  "setwindow_usage": {
+    "description": "Usage instructions for /setwindow command",
+    "other": "Использование: /setwindow <a|b|c> <лимит> <длительность>\nПример: /setwindow a 1000 30m"
+  },
+  "enablewindow_usage": {
+    "description": "Usage instructions for /enablewindow command",
+    "other": "Использование: /enablewindow <a|b|c>"
+  },
+  "disablewindow_usage": {
+    "description": "Usage instructions for /disablewindow command",
+    "other": "Использование: /disablewindow <a|b|c>"
+  },
+  "config_usage": {
+    "description": "Usage instructions for /config command",
+    "other": "Использование: /config"
+  },
+  "english_name": {
+    "description": "Name of English language in English",
+    "other": "English"
+  },
+  "russian_name": {
+    "description": "Name of Russian language in Russian",
+    "other": "Русский"
+  },
+  "dutch_name": {
+    "description": "Name of Dutch language in Russian",
+    "other": "Нидерландский"
+  },
+  "minutes": {
+    "description": "Time unit: minutes",
+    "other": "минут"
+  },
+  "hours": {
+    "description": "Time unit: hours",
+    "other": "часов"
+  },
+  "days": {
+    "description": "Time unit: days",
+    "other": "дней"
+  },
+  "minute": {
+    "description": "Time unit: minute (singular)",
+    "other": "минуту"
+  },
+  "hour": {
+    "description": "Time unit: hour (singular)",
+    "other": "час"
+  },
+  "day": {
+    "description": "Time unit: day (singular)",
+    "other": "день"
+  },
+  "rate_limit_exceeded_single": {
+    "description": "Rate limit exceeded for one window (sent to private chat)",
+    "other": "🚫 Сообщение удалено: {{.group}}\n\nВы превысили лимит:\n{{.details}}\n\n⏳ Ваше сообщение было удалено. Подождите, пока использование упадёт ниже лимита."
+  },
+  "rate_limit_exceeded_multiple": {
+    "description": "Rate limit exceeded for multiple windows (sent to private chat)",
+    "other": "🚫 Сообщение удалено: {{.group}}\n\nВы превысили {{.count}} лимитов:\n{{.details}}\n\n⏳ Ваше сообщение было удалено. Подождите, пока использование упадёт ниже лимитов."
+  },
+  "rate_limit_window_detail": {
+    "description": "Details for a single violated window",
+    "other": "• Окно {{.window}}: {{.charCount}}/{{.charLimit}} символов ({{.percentage}}%)"
+  },
+  "rate_limit_warning_95": {
+    "description": "Warning notification when user reaches 95% of rate limit",
+    "other": "🚨 Предупреждение о лимите: {{.group}}\n\nОкно {{.window}}: {{.current}}/{{.limit}} символов (≥95%)\n\n⚡ КРИТИЧНО: Вы почти достигли лимита! Замедлитесь, иначе следующие сообщения будут удалены."
+  },
+  "private_chat_tip": {
+    "description": "Instruction to start private chat with bot",
+    "other": "💬 Совет: Начните личный чат со мной, чтобы получать ответы в личных сообщениях."
+  },
+  "group_notification_window_changed": {
+    "description": "Group notification when window configuration changes",
+    "other": "Окно {{.window}} обновлено: {{.limit}} символов/{{.duration}} пользователем @{{.admin}}"
+  },
+  "group_notification_window_enabled": {
+    "description": "Group notification when window is enabled",
+    "other": "Окно {{.window}} включено пользователем @{{.admin}}"
+  },
+  "group_notification_window_disabled": {
+    "description": "Group notification when window is disabled",
+    "other": "Окно {{.window}} отключено пользователем @{{.admin}}"
+  },
+  "group_notification_language_changed": {
+    "description": "Group notification when language changes",
+    "other": "Язык группы изменён на {{.language}} пользователем @{{.admin}}"
+  },
+  "group_notification_paused": {
+    "description": "Group notification when rate limiting is paused",
+    "other": "Ограничение скорости приостановлено до {{.until}} пользователем @{{.admin}}"
+  },
+  "group_notification_resumed": {
+    "description": "Group notification when rate limiting is resumed",
+    "other": "Ограничение скорости возобновлено пользователем @{{.admin}}"
+  },
+  "group.notification.window_updated": {
+    "description": "Group notification when window configuration is updated",
+    "other": "Окно {{.Slot}} обновлено {{.Actor}}"
+  },
+  "group.notification.window_enabled": {
+    "description": "Group notification when window is enabled",
+    "other": "Окно {{.Slot}} включено {{.Actor}}"
+  },
+  "group.notification.window_disabled": {
+    "description": "Group notification when window is disabled",
+    "other": "Окно {{.Slot}} отключено {{.Actor}}"
+  },
+  "group.notification.language_changed": {
+    "description": "Group notification when language is changed",
+    "other": "Язык изменен на {{.Language}} {{.Actor}}"
+  },
+  "group.notification.group_paused": {
+    "description": "Group notification when rate limiting is paused",
+    "other": "Ограничение скорости приостановлено {{.Actor}}"
+  },
+  "group.notification.group_resumed": {
+    "description": "Group notification when rate limiting is resumed",
+    "other": "Ограничение скорости возобновлено {{.Actor}}"
+  },
+  "group.notification.config_changed": {
+    "description": "Generic group notification for configuration changes",
+    "other": "Конфигурация изменена {{.Actor}}"
+  },
+  "cmd_error_not_admin": {
+    "description": "User must be admin to perform action",
+    "other": "❌ Вы должны быть администратором, чтобы {{.action}}."
+  },
+  "cmd_error_invalid_user_id": {
+    "description": "Invalid user ID provided",
+    "other": "❌ Неверный ID пользователя"
+  },
+  "cmd_error_database_error": {
+    "description": "Generic database error",
+    "other": "❌ Ошибка базы данных. Пожалуйста, попробуйте снова."
+  },
+  "cmd_error_no_rate_limiting": {
+    "description": "No rate limiting configured for group",
+    "other": "📊 Для этой группы ещё не настроено ограничение скорости."
+  },
+  "cmd_error_invalid_language": {
+    "description": "Invalid language code provided",
+    "other": "❌ Неверный язык. Поддерживаются: en (English), ru (Русский), nl (Nederlands)"
+  },
+  "cmd_setwindow_usage_private": {
+    "description": "Usage help for setwindow in private chat",
+    "other": "❌ Использование из личного чата: /setwindow @имягруппы <a|b|c> <лимит> <длительность>\nПример: /setwindow @mygroup a 1000 30m"
+  },
+  "cmd_setwindow_usage_group": {
+    "description": "Usage help for setwindow in group",
+    "other": "❌ Использование: /setwindow <a|b|c> <лимит> <длительность>\nПримеры:\n  /setwindow a 1000 30m\n  /setwindow b 5000 2h\n  /setwindow c 10000 7d"
+  },
+  "cmd_setwindow_success": {
+    "description": "Window configured successfully",
+    "other": "✅ Окно {{.window}} настроено:\n  • Лимит: {{.limit}} символов\n  • Длительность: {{.duration}}\n  • Статус: {{.status}}"
+  },
+  "cmd_setwindow_invalid_slot": {
+    "description": "Invalid window slot provided",
+    "other": "❌ Неверный слот окна '{{.slot}}'. Должно быть: a, b или c"
+  },
+  "cmd_setwindow_invalid_limit": {
+    "description": "Invalid character limit provided",
+    "other": "❌ Неверный лимит символов: {{.error}}"
+  },
+  "cmd_setwindow_invalid_duration": {
+    "description": "Invalid duration format",
+    "other": "❌ Неверная длительность: {{.error}}"
+  },
+  "cmd_config_usage_private": {
+    "description": "Usage help for config in private chat",
+    "other": "❌ Использование из личного чата: /config @имягруппы"
+  },
+  "cmd_config_no_limits": {
+    "description": "No rate limiting configured",
+    "other": "📊 Для этой группы ещё не настроено ограничение скорости.\nАдминистратор может использовать /setwindow для настройки окон."
+  },
+  "cmd_config_title": {
+    "description": "Config display title",
+    "other": "📊 **Конфигурация ограничения скорости**\n\nГруппа: {{.group}}"
+  },
+  "cmd_config_paused": {
+    "description": "Status line when paused",
+    "other": "\n⏸ **Статус**: Приостановлено{{.until}}"
+  },
+  "cmd_config_active": {
+    "description": "Status line when active",
+    "other": "\n▶️ **Статус**: Активно"
+  },
+  "cmd_config_window_enabled": {
+    "description": "Enabled window display",
+    "other": "\n\n✅ **Окно {{.slot}}** (включено)\n  • Лимит: {{.limit}} символов\n  • Длительность: {{.duration}}"
+  },
+  "cmd_config_window_disabled": {
+    "description": "Disabled window display",
+    "other": "\n\n🚫 **Окно {{.slot}}** (отключено)\n  • Лимит: {{.limit}} символов\n  • Длительность: {{.duration}}"
+  },
+  "cmd_config_usage_hint": {
+    "description": "Hint for enabling/disabling windows",
+    "other": "\n\n💡 Используйте /enablewindow или /disablewindow для переключения окон."
+  },
+  "cmd_enablewindow_usage_private": {
+    "description": "Usage help for enablewindow in private chat",
+    "other": "❌ Использование из личного чата: /enablewindow @имягруппы <a|b|c>"
+  },
+  "cmd_enablewindow_usage_group": {
+    "description": "Usage help for enablewindow in group",
+    "other": "❌ Использование: /enablewindow <a|b|c>"
+  },
+  "cmd_enablewindow_success": {
+    "description": "Window enabled successfully",
+    "other": "✅ Окно {{.window}} включено."
+  },
+  "cmd_enablewindow_invalid_slot": {
+    "description": "Invalid window slot",
+    "other": "❌ Неверный слот окна '{{.slot}}'. Должно быть: a, b или c"
+  },
+  "cmd_enablewindow_not_configured": {
+    "description": "Window not configured yet",
+    "other": "❌ Окно {{.window}} ещё не настроено. Сначала используйте /setwindow."
+  },
+  "cmd_disablewindow_usage_private": {
+    "description": "Usage help for disablewindow in private chat",
+    "other": "❌ Использование из личного чата: /disablewindow @имягруппы <a|b|c>"
+  },
+  "cmd_disablewindow_usage_group": {
+    "description": "Usage help for disablewindow in group",
+    "other": "❌ Использование: /disablewindow <a|b|c>"
+  },
+  "cmd_disablewindow_success": {
+    "description": "Window disabled successfully",
+    "other": "✅ Окно {{.window}} отключено."
+  },
+  "cmd_disablewindow_invalid_slot": {
+    "description": "Invalid window slot",
+    "other": "❌ Неверный слот окна '{{.slot}}'. Должно быть: a, b или c"
+  },
+  "cmd_disablewindow_not_configured": {
+    "description": "Window not configured",
+    "other": "❌ Окно {{.window}} ещё не настроено."
+  },
+  "cmd_override_usage_private": {
+    "description": "Usage help for override in private chat",
+    "other": "❌ Использование из личного чата: /override @имягруппы <user_id|@username> <режим> [длительность]\nРежимы: whitelist, blacklist, clear"
+  },
+  "cmd_override_usage_group": {
+    "description": "Usage help for override in group",
+    "other": "❌ Использование: /override <user_id|@username> <режим> [длительность]\nРежимы: whitelist, blacklist, clear\nПримеры:\n  /override @user whitelist\n  /override 12345 blacklist 7d\n  /override @user clear"
+  },
+  "cmd_override_invalid_mode": {
+    "description": "Invalid override mode",
+    "other": "❌ Неверный режим '{{.mode}}'. Должно быть: whitelist, blacklist или clear"
+  },
+  "cmd_override_invalid_duration": {
+    "description": "Invalid duration format",
+    "other": "❌ Неверная длительность: {{.error}}"
+  },
+  "cmd_override_whitelist_success": {
+    "description": "User whitelisted successfully",
+    "other": "✅ Пользователь {{.user}} добавлен в белый список{{.duration}}."
+  },
+  "cmd_override_blacklist_success": {
+    "description": "User blacklisted successfully",
+    "other": "✅ Пользователь {{.user}} добавлен в черный список{{.duration}}."
+  },
+  "cmd_override_cleared": {
+    "description": "Override removed successfully",
+    "other": "✅ Переопределение удалено для пользователя {{.user}}."
+  },
+  "cmd_checkuser_usage_private": {
+    "description": "Usage help for checkuser in private chat",
+    "other": "❌ Использование из личного чата: /checkuser @имягруппы <user_id|@username>"
+  },
+  "cmd_checkuser_usage_group": {
+    "description": "Usage help for checkuser in group",
+    "other": "❌ Использование: /checkuser <user_id|@username>"
+  },
+  "cmd_checkuser_no_config": {
+    "description": "No rate limiting configured",
+    "other": "📊 Для этой группы ещё не настроено ограничение скорости."
+  },
+  "cmd_checkuser_title": {
+    "description": "Checkuser display title",
+    "other": "👤 **Статус пользователя: {{.user}}**\n\nГруппа: {{.group}}"
+  },
+  "cmd_checkuser_override_whitelist": {
+    "description": "User has whitelist override",
+    "other": "\n\n✅ **Ручное переопределение**: В белом списке (освобожден от всех лимитов){{.expires}}"
+  },
+  "cmd_checkuser_override_blacklist": {
+    "description": "User has blacklist override",
+    "other": "\n\n🚫 **Ручное переопределение**: В черном списке (все сообщения удаляются){{.expires}}"
+  },
+  "cmd_checkuser_no_override": {
+    "description": "No manual override set",
+    "other": "\n\nℹ️ Ручное переопределение не установлено."
+  },
+  "cmd_checkuser_window_ok": {
+    "description": "Window status OK",
+    "other": "\n\n✅ **Окно {{.slot}}**: {{.current}}/{{.limit}} симв. ({{.percentage}}%)"
+  },
+  "cmd_checkuser_window_warning": {
+    "description": "Window approaching limit",
+    "other": "\n\n⚠️ **Окно {{.slot}}**: {{.current}}/{{.limit}} симв. ({{.percentage}}% - приближается к лимиту)"
+  },
+  "cmd_checkuser_window_exceeded": {
+    "description": "Window limit exceeded",
+    "other": "\n\n❌ **Окно {{.slot}}**: {{.current}}/{{.limit}} симв. ({{.percentage}}% - ПРЕВЫШЕНО)"
+  },
+  "cmd_checkuser_window_disabled": {
+    "description": "Window is disabled",
+    "other": "\n\n🚫 **Окно {{.slot}}**: Отключено"
+  },
+  "cmd_showoverrides_usage_private": {
+    "description": "Usage help for showoverrides in private chat",
+    "other": "❌ Использование из личного чата: /showoverrides @имягруппы"
+  },
+  "cmd_showoverrides_no_overrides": {
+    "description": "No overrides set",
+    "other": "📋 **Ручные переопределения**\n\nДля этой группы не установлено ручных переопределений.\n\n💡 Используйте /override <user_id|@username> <whitelist|blacklist|clear> для управления переопределениями."
+  },
+  "cmd_showoverrides_title": {
+    "description": "Showoverrides display title",
+    "other": "📋 **Ручные переопределения**\n\nГруппа: {{.group}}"
+  },
+  "cmd_showoverrides_whitelist_entry": {
+    "description": "Whitelist override entry",
+    "other": "\n\n✅ {{.user}}\n  • Режим: В белом списке (освобожден от лимитов)\n  • Установлено: {{.created}}{{.expires}}"
+  },
+  "cmd_showoverrides_blacklist_entry": {
+    "description": "Blacklist override entry",
+    "other": "\n\n🚫 {{.user}}\n  • Режим: В черном списке (все сообщения удаляются)\n  • Установлено: {{.created}}{{.expires}}"
+  },
+  "cmd_setlanguage_usage_private_with_group": {
+    "description": "Usage help for setlanguage in private chat with group option",
+    "other": "❌ Использование:\n  /setlanguage en  (устанавливает язык для личного чата)\n  /setlanguage @имягруппы en  (устанавливает язык для группы)"
+  },
+  "cmd_setlanguage_usage": {
+    "description": "Usage help for setlanguage",
+    "other": "❌ Использование: /setlanguage <язык>\nПример: /setlanguage en"
+  },
+  "cmd_setlanguage_success_user": {
+    "description": "User language set successfully",
+    "other": "✅ Ваш язык установлен на: {{.language}}\n\nВсе ответы бота теперь будут на {{.language_name}}."
+  },
+  "cmd_setlanguage_success_group": {
+    "description": "Group language set successfully",
+    "other": "✅ Язык группы установлен на: {{.language}}\n\nВсе уведомления группы теперь будут на {{.language_name}}."
+  },
+  "cmd_pause_usage_private": {
+    "description": "Usage help for pause in private chat",
+    "other": "❌ Использование из личного чата: /pause @имягруппы [длительность]"
+  },
+  "cmd_pause_usage_group": {
+    "description": "Usage help for pause in group",
+    "other": "❌ Использование: /pause [длительность]\nПримеры:\n  /pause (приостановить бессрочно)\n  /pause 30m (приостановить на 30 минут)\n  /pause 2h (приостановить на 2 часа)"
+  },
+  "cmd_pause_invalid_duration": {
+    "description": "Invalid pause duration",
+    "other": "❌ Неверная длительность: {{.error}}"
+  },
+  "cmd_pause_success_temporary": {
+    "description": "Rate limiting paused temporarily",
+    "other": "✅ Ограничение скорости приостановлено на {{.duration}}.\n\nВсе пользователи могут отправлять неограниченное количество сообщений до {{.until}}.\nОграничение скорости возобновится автоматически."
+  },
+  "cmd_pause_success_indefinite": {
+    "description": "Rate limiting paused indefinitely",
+    "other": "✅ Ограничение скорости приостановлено бессрочно.\nВсе пользователи могут отправлять неограниченное количество сообщений, пока вы не используете /resume."
+  },
+  "cmd_resume_usage_private": {
+    "description": "Usage help for resume in private chat",
+    "other": "❌ Использование из личного чата: /resume @имягруппы"
+  },
+  "cmd_resume_not_paused": {
+    "description": "Rate limiting not paused",
+    "other": "ℹ️ Ограничение скорости не приостановлено для этой группы."
+  },
+  "cmd_resume_success": {
+    "description": "Rate limiting resumed successfully",
+    "other": "✅ Ограничение скорости возобновлено.\nВсе включенные окна теперь применяют лимиты снова."
+  },
+  "cmd_mystatus_usage_private": {
+    "description": "Usage help for mystatus in private chat",
+    "other": "❌ Использование из личного чата: /mystatus @имягруппы"
+  },
+  "cmd_mystatus_no_config": {
+    "description": "No rate limiting configured",
+    "other": "📊 Для этой группы не настроено ограничение скорости."
+  },
+  "cmd_mystatus_title": {
+    "description": "Mystatus display title",
+    "other": "📊 **Ваш статус**\n\nГруппа: {{.group}}"
+  },
+  "cmd_mystatus_paused": {
+    "description": "Rate limiting is paused",
+    "other": "\n\n⏸ Ограничение скорости в данный момент приостановлено{{.until}}."
+  },
+  "cmd_mystatus_override_whitelist": {
+    "description": "User is whitelisted",
+    "other": "\n\n✅ Вы в белом списке (освобождены от всех лимитов){{.expires}}."
+  },
+  "cmd_mystatus_override_blacklist": {
+    "description": "User is blacklisted",
+    "other": "\n\n🚫 Вы в черном списке (все ваши сообщения удаляются){{.expires}}."
+  },
+  "cmd_mystatus_window_ok": {
+    "description": "Window status OK",
+    "other": "\n\n✅ **Окно {{.slot}}**: {{.current}}/{{.limit}} симв. ({{.percentage}}%)"
+  },
+  "cmd_mystatus_window_warning": {
+    "description": "Window approaching limit",
+    "other": "\n\n⚠️ **Окно {{.slot}}**: {{.current}}/{{.limit}} симв. ({{.percentage}}% - приближается к лимиту!)"
+  },
+  "cmd_mystatus_window_exceeded": {
+    "description": "Window limit exceeded",
+    "other": "\n\n❌ **Окно {{.slot}}**: {{.current}}/{{.limit}} симв. ({{.percentage}}% - лимит превышен!)"
+  },
+  "cmd_mystatus_window_disabled": {
+    "description": "Window is disabled",
+    "other": "\n\n🚫 **Окно {{.slot}}**: Отключено"
+  },
+  "cmd_help_user": {
+    "description": "User help text (shown to everyone)",
+    "other": "🤖 Throttle Bot - Многооконный ограничитель скорости\n\n👤 **Ваши команды:**\n• /help - Показать это справочное сообщение\n• /help admin - Показать команды администратора\n• /mystatus @группа - Проверить текущее использование\n  Пример: /mystatus @home\n• /config @группа - Показать конфигурацию\n  Пример: /config @home\n• /setlanguage <язык> - Установить ваш язык\n  Пример: /setlanguage russian\n\n💡 **Как это работает:**\nКаждая группа имеет до 3 окон ограничения скорости (A, B, C) с разными:\n- Лимитами символов (например, 1000, 5000, 10000 символов)\n- Временными окнами (например, 30 минут, 2 часа, 7 дней)\n\nВаши сообщения учитываются во всех активных окнах. Если вы превысите лимит ЛЮБОГО окна, ваши сообщения будут автоматически удалены до сброса окна.\n\n🎯 **Состояния переопределения:**\n- **Обычное**: Применяется ограничение скорости (по умолчанию)\n- **Белый список**: Ваши сообщения всегда разрешены ✅\n- **Черный список**: Ваши сообщения всегда блокируются ❌\n\n💬 Свяжитесь с администратором, если вам нужна помощь!"
+  },
+  "cmd_help_admin": {
+    "description": "Admin help text (added to user help when /help admin is used)",
+    "other": "\n\n� **Команды администратора:**\n\n**Управление окнами:**\n• /setwindow @группа <a|b|c> <лимит> <длительность>\n  Пример: /setwindow @home a 1000 30m\n• /enablewindow @группа <a|b|c>\n  Пример: /enablewindow @home a\n• /disablewindow @группа <a|b|c>\n  Пример: /disablewindow @home b\n\n**Управление пользователями:**\n• /override @группа <user_id|@username> <whitelist|blacklist|clear> [длительность]\n  Пример: /override @home @alice whitelist 7d\n  Пример: /override @home 123456789 blacklist\n  Пример: /override @home @bob clear\n• /checkuser @группа <user_id|@username>\n  Пример: /checkuser @home @alice\n• /overrides @группа\n  Пример: /overrides @home\n\n**Управление группой:**\n• /pause @группа [длительность]\n  Пример: /pause @home 2h\n  Пример: /pause @home (навсегда)\n• /resume @группа\n  Пример: /resume @home\n\n**Язык:**\n• /setlanguage <язык> (для вашего личного использования)\n  Пример: /setlanguage russian\n• /setlanguage @группа <язык> (для установки языка группы)\n  Пример: /setlanguage @home russian\n  Доступные: english, russian, dutch (или en, ru, nl)\n\n📊 **Просмотр конфигурации:**\n• /config @группа - Показать все настройки окон\n  Пример: /config @home\n\n⏰ **Форматы длительности:** Xm (минуты), Xh (часы), Xd (дни)\nПримеры: 30m, 2h, 7d, 365d"
+  }
+}

@@ -40,9 +40,6 @@ type Client interface {
 	// GetChatMember gets information about a chat member
 	GetChatMember(ctx context.Context, chatID int64, userID int64) (tgbotapi.ChatMember, error)
 
-	// SendAdminNotification sends a notification message to chat administrators
-	SendAdminNotification(ctx context.Context, chatID int64, text string) error
-
 	// RestrictUser restricts a user in a chat (removes send message permissions)
 	RestrictUser(ctx context.Context, chatID int64, userID int64) error
 
@@ -52,6 +49,9 @@ type Client interface {
 	// CheckBotPermissions checks if the bot has required permissions
 	CheckBotPermissions(ctx context.Context, chatID int64) (canRestrict bool, canDelete bool, err error)
 
-	// SendEphemeralMessage sends a message that will be automatically deleted after a delay
-	SendEphemeralMessage(chatID int64, text string, config *EphemeralMessageConfig) (tgbotapi.Message, error)
+	// GetChatAdministrators gets the list of administrators in a chat
+	GetChatAdministrators(ctx context.Context, chatID int64) ([]tgbotapi.ChatMember, error)
+
+	// GetChatMembersCount gets the number of members in a chat
+	GetChatMembersCount(ctx context.Context, chatID int64) (int, error)
 }

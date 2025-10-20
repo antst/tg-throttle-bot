@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,9 +22,11 @@ import (
 
 	"github.com/antst/tg-throttle-bot/internal/bot"
 	"github.com/antst/tg-throttle-bot/internal/config"
+	"github.com/antst/tg-throttle-bot/internal/i18n"
 	"github.com/antst/tg-throttle-bot/internal/logging"
 	"github.com/antst/tg-throttle-bot/internal/ratelimit"
 	"github.com/antst/tg-throttle-bot/internal/storage"
+	"github.com/antst/tg-throttle-bot/internal/sync"
 	"github.com/antst/tg-throttle-bot/internal/telegram"
 	"github.com/antst/tg-throttle-bot/migrations"
 )
@@ -53,6 +56,15 @@ func main() {
 		"default_window", cfg.DefaultWindow,
 		"log_level", cfg.LogLevel,
 	)
+
+	// Initialize i18n bundle
+	if err := i18n.Init(); err != nil {
+		logger.Fatalw(
+			"Failed to initialize i18n",
+			"error", err,
+		)
+	}
+	logger.Info("i18n initialized successfully with embedded translations")
 
 	// Initialize database
 	ctx := context.Background()
@@ -106,11 +118,25 @@ func main() {
 	// Create message handler with logger
 	handler := bot.NewHandlerWithLogger(rateLimitStore, client, logger)
 
+	// Create sync coordinator for proactive member synchronization (Feature 011)
+	syncCoordinator := sync.NewSyncCoordinator(client, rateLimitStore, logger.Desugar())
+	handler.SetSyncCoordinator(syncCoordinator)
+	logger.Info("Sync coordinator initialized for proactive member synchronization")
+
 	// Create and start background worker for cleanup
 	worker := ratelimit.NewWorker(rateLimitStore, client.GetBotAPI())
 	go worker.Start(ctx)
 
 	logger.Info("Background worker started (cleanup every 5min: old messages + expired overrides)")
+
+	// Create and start periodic sync worker (Feature 011: 24h member sync)
+	syncWorker := sync.NewPeriodicSyncWorker(syncCoordinator, rateLimitStore, logger.Desugar(), 24*time.Hour)
+	go syncWorker.Start(ctx)
+
+	logger.Info("Periodic sync worker started (every 24h: group member synchronization)")
+
+	// Get MessageRouter for permission notifications (Feature 009 US4: MessageRouter compliance)
+	router := handler.GetRouter()
 
 	// Setup permission loss/restore callbacks
 	onPermissionLost := func(chatID int64, missing []string) {
@@ -127,17 +153,21 @@ func main() {
 				"error", err,
 			)
 		}
-		// Send notification to chat admins (FR-022)
-		notifyMsg := fmt.Sprintf(
-			"⚠️ Rate limiting temporarily disabled.\n\n"+
-				"Missing permissions: %v\n\n"+
-				"Please grant the bot these permissions:\n"+
-				"• Can restrict members\n"+
-				"• Can delete messages\n\n"+
-				"Rate limiting will resume automatically when permissions are restored.",
-			missing,
-		)
-		if err := client.SendAdminNotification(ctx, chatID, notifyMsg); err != nil {
+
+		// Send notification to chat admins (FR-022, Feature 009 US4: localized)
+		// Note: Using group's default language since this is a system notification
+		groupLang, err := rateLimitStore.GetGroupLanguage(ctx, chatID)
+		if err != nil || groupLang == "" {
+			groupLang = "en"
+		}
+
+		permissionsStr := strings.Join(missing, ", ")
+		localizer := i18n.GetLocalizer(groupLang)
+		message := i18n.Localize(localizer, "permission_lost", map[string]interface{}{
+			"permissions": permissionsStr,
+		})
+
+		if err := router.SendGroupNotification(ctx, chatID, message); err != nil {
 			logger.Errorw(
 				"Failed to send permission lost notification",
 				"chat_id", chatID,
@@ -159,9 +189,18 @@ func main() {
 				"error", err,
 			)
 		}
-		// Send notification to chat admins
-		notifyMsg := "✅ Permissions restored. Rate limiting is now active."
-		if err := client.SendAdminNotification(ctx, chatID, notifyMsg); err != nil {
+
+		// Send notification to chat admins (Feature 009 US4: localized)
+		// Note: Using group's default language since this is a system notification
+		groupLang, err := rateLimitStore.GetGroupLanguage(ctx, chatID)
+		if err != nil || groupLang == "" {
+			groupLang = "en"
+		}
+
+		localizer := i18n.GetLocalizer(groupLang)
+		message := i18n.Localize(localizer, "permission_restored", map[string]interface{}{})
+
+		if err := router.SendGroupNotification(ctx, chatID, message); err != nil {
 			logger.Errorw(
 				"Failed to send permission restored notification",
 				"chat_id", chatID,

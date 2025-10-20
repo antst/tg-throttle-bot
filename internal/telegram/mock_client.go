@@ -14,38 +14,28 @@ type MockClient struct {
 	mu sync.RWMutex
 
 	// Configurable responses
-	IsAdminResponse            map[int64]map[int64]bool // chatID -> userID -> isAdmin
-	IsCreatorResponse          map[int64]map[int64]bool // chatID -> userID -> isCreator
-	GetUserRolesResponse       map[int64]map[int64][]string
-	GetChatMemberResponse      map[int64]map[int64]tgbotapi.ChatMember
-	CheckBotPermissionsResp    map[int64]BotPermissions
-	SendMessageError           error
-	SendReplyError             error
-	DeleteMessageError         error
-	RestrictUserError          error
-	UnrestrictUserError        error
-	SendAdminNotificationError error
+	IsAdminResponse         map[int64]map[int64]bool // chatID -> userID -> isAdmin
+	IsCreatorResponse       map[int64]map[int64]bool // chatID -> userID -> isCreator
+	GetUserRolesResponse    map[int64]map[int64][]string
+	GetChatMemberResponse   map[int64]map[int64]tgbotapi.ChatMember
+	CheckBotPermissionsResp map[int64]BotPermissions
+	SendMessageError        error
+	SendReplyError          error
+	DeleteMessageError      error
+	RestrictUserError       error
+	UnrestrictUserError     error
 
 	// Call tracking
 	DeletedMessages       []DeletedMessage
 	SentMessages          []SentMessage
 	SentReplies           []SentReply
-	SentEphemeralMessages []SentEphemeralMessage
 	RestrictedUsers       []RestrictedUser
 	UnrestrictedUsers     []UnrestrictedUser
-	AdminNotifications    []AdminNotification
 	IsAdminCalls          []AdminCheck
 	IsCreatorCalls        []AdminCheck
 	GetUserRolesCalls     []AdminCheck
 	GetChatMemberCalls    []AdminCheck
 	CheckPermissionsCalls []int64
-}
-
-// SentEphemeralMessage tracks an ephemeral message call
-type SentEphemeralMessage struct {
-	ChatID int64
-	Text   string
-	Config *EphemeralMessageConfig
 }
 
 // DeletedMessage tracks a deleted message call.
@@ -79,12 +69,6 @@ type UnrestrictedUser struct {
 	UserID int64
 }
 
-// AdminNotification tracks an admin notification call.
-type AdminNotification struct {
-	ChatID int64
-	Text   string
-}
-
 // AdminCheck tracks an admin/creator/roles check call.
 type AdminCheck struct {
 	ChatID int64
@@ -111,7 +95,6 @@ func NewMockClient() *MockClient {
 		SentReplies:             []SentReply{},
 		RestrictedUsers:         []RestrictedUser{},
 		UnrestrictedUsers:       []UnrestrictedUser{},
-		AdminNotifications:      []AdminNotification{},
 		IsAdminCalls:            []AdminCheck{},
 		IsCreatorCalls:          []AdminCheck{},
 		GetUserRolesCalls:       []AdminCheck{},
@@ -330,24 +313,6 @@ func (m *MockClient) GetChatMember(_ context.Context, chatID int64, userID int64
 	return tgbotapi.ChatMember{}, fmt.Errorf("chat member not found")
 }
 
-// SendAdminNotification tracks the admin notification call.
-func (m *MockClient) SendAdminNotification(_ context.Context, chatID int64, text string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.SendAdminNotificationError != nil {
-		return m.SendAdminNotificationError
-	}
-
-	m.AdminNotifications = append(
-		m.AdminNotifications, AdminNotification{
-			ChatID: chatID,
-			Text:   text,
-		},
-	)
-	return nil
-}
-
 // RestrictUser tracks the restrict user call.
 func (m *MockClient) RestrictUser(_ context.Context, chatID int64, userID int64) error {
 	m.mu.Lock()
@@ -399,25 +364,33 @@ func (m *MockClient) CheckBotPermissions(_ context.Context, chatID int64) (bool,
 	return true, true, nil
 }
 
-// SendEphemeralMessage tracks the ephemeral message call and returns a mock message
-func (m *MockClient) SendEphemeralMessage(chatID int64, text string, config *EphemeralMessageConfig) (tgbotapi.Message, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+// GetChatAdministrators returns a mock list of administrators.
+func (m *MockClient) GetChatAdministrators(_ context.Context, chatID int64) ([]tgbotapi.ChatMember, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	m.SentEphemeralMessages = append(m.SentEphemeralMessages, SentEphemeralMessage{
-		ChatID: chatID,
-		Text:   text,
-		Config: config,
-	})
+	// Return empty list by default (can be configured via GetChatMemberResponse)
+	var admins []tgbotapi.ChatMember
+	if members, ok := m.GetChatMemberResponse[chatID]; ok {
+		for _, member := range members {
+			if member.IsAdministrator() || member.IsCreator() {
+				admins = append(admins, member)
+			}
+		}
+	}
+	return admins, nil
+}
 
-	// Return a mock message
-	return tgbotapi.Message{
-		MessageID: 12345,
-		Chat: &tgbotapi.Chat{
-			ID: chatID,
-		},
-		Text: text,
-	}, nil
+// GetChatMembersCount returns a mock member count.
+func (m *MockClient) GetChatMembersCount(_ context.Context, chatID int64) (int, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Return count based on configured members, or 0 by default
+	if members, ok := m.GetChatMemberResponse[chatID]; ok {
+		return len(members), nil
+	}
+	return 0, nil
 }
 
 // Reset clears all tracked calls and responses.
@@ -428,10 +401,8 @@ func (m *MockClient) Reset() {
 	m.DeletedMessages = []DeletedMessage{}
 	m.SentMessages = []SentMessage{}
 	m.SentReplies = []SentReply{}
-	m.SentEphemeralMessages = []SentEphemeralMessage{}
 	m.RestrictedUsers = []RestrictedUser{}
 	m.UnrestrictedUsers = []UnrestrictedUser{}
-	m.AdminNotifications = []AdminNotification{}
 	m.IsAdminCalls = []AdminCheck{}
 	m.IsCreatorCalls = []AdminCheck{}
 	m.GetUserRolesCalls = []AdminCheck{}

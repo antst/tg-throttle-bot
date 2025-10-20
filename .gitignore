@@ -61,3 +61,4 @@ temp/
 # SQLC generated files are tracked, but keep this comment
 # internal/storage/sqlc/ is generated but committed for reproducibility
 
+node_modules/

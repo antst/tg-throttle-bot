@@ -215,22 +215,6 @@ func TestMockClient(t *testing.T) {
 			assert.Equal(t, text, mockClient.SentReplies[0].Text)
 		},
 	)
-
-	t.Run(
-		"tracks admin notifications", func(t *testing.T) {
-			mockClient.Reset()
-
-			chatID := int64(555)
-			text := "Admin notification"
-
-			err := mockClient.SendAdminNotification(ctx, chatID, text)
-			require.NoError(t, err)
-
-			assert.Len(t, mockClient.AdminNotifications, 1)
-			assert.Equal(t, chatID, mockClient.AdminNotifications[0].ChatID)
-			assert.Equal(t, text, mockClient.AdminNotifications[0].Text)
-		},
-	)
 }
 
 // TestMockClientConcurrency verifies mock client is thread-safe.

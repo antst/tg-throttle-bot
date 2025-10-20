@@ -35,9 +35,15 @@ func NewClient(token string, debug bool) (*BotClient, error) {
 
 // GetUpdatesChan returns a channel for receiving updates from Telegram.
 // Configures a 60-second timeout for long polling.
+// Includes my_chat_member and chat_member updates for proactive member tracking (Feature 011).
 func (c *BotClient) GetUpdatesChan() tgbotapi.UpdatesChannel {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
+	u.AllowedUpdates = []string{
+		"message",        // Regular messages (existing)
+		"my_chat_member", // Bot status changes (Feature 011 - proactive sync)
+		"chat_member",    // Member status changes (Feature 011 - proactive sync)
+	}
 
 	return c.bot.GetUpdatesChan(u)
 }
@@ -181,52 +187,6 @@ func (c *BotClient) GetChatMember(ctx context.Context, chatID int64, userID int6
 	return member, nil
 }
 
-// SendAdminNotification sends a notification message to chat administrators.
-// Used for alerting admins about permission changes and important events.
-func (c *BotClient) SendAdminNotification(ctx context.Context, chatID int64, text string) error {
-	// Rate limit for getting chat administrators
-	if err := c.rateLimiter.Wait(ctx); err != nil {
-		return fmt.Errorf("rate limiter error: %w", err)
-	}
-
-	// Get chat administrators
-	adminConfig := tgbotapi.ChatAdministratorsConfig{
-		ChatConfig: tgbotapi.ChatConfig{
-			ChatID: chatID,
-		},
-	}
-
-	admins, err := c.bot.GetChatAdministrators(adminConfig)
-	if err != nil {
-		// If we can't get admins, just send to the chat (with rate limiting)
-		return c.SendMessage(chatID, text)
-	}
-
-	// Rate limit for sending the message
-	if err := c.rateLimiter.Wait(ctx); err != nil {
-		return fmt.Errorf("rate limiter error: %w", err)
-	}
-
-	// Send notification to the chat (visible to all admins)
-	msg := tgbotapi.NewMessage(chatID, text)
-	msg.ParseMode = "Markdown"
-
-	// Mention all admins in the message
-	mentions := ""
-	for _, admin := range admins {
-		if !admin.User.IsBot {
-			mentions += fmt.Sprintf(" @%s", admin.User.UserName)
-		}
-	}
-
-	if mentions != "" {
-		msg.Text = text + "\n\n_Admins:" + mentions + "_"
-	}
-
-	_, err = c.bot.Send(msg)
-	return err
-}
-
 // RestrictUser restricts a user in a chat (removes send message permissions)
 func (c *BotClient) RestrictUser(ctx context.Context, chatID int64, userID int64) error {
 	if err := c.rateLimiter.Wait(ctx); err != nil {
@@ -307,4 +267,46 @@ func (c *BotClient) CheckBotPermissions(ctx context.Context, chatID int64) (
 	canRestrict = member.CanRestrictMembers
 	canDelete = member.CanDeleteMessages
 	return canRestrict, canDelete, nil
+}
+
+// GetChatAdministrators gets the list of administrators in a chat.
+// Used for initial group sync and periodic member validation.
+func (c *BotClient) GetChatAdministrators(ctx context.Context, chatID int64) ([]tgbotapi.ChatMember, error) {
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiter error: %w", err)
+	}
+
+	config := tgbotapi.ChatAdministratorsConfig{
+		ChatConfig: tgbotapi.ChatConfig{
+			ChatID: chatID,
+		},
+	}
+
+	admins, err := c.bot.GetChatAdministrators(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chat administrators: %w", err)
+	}
+
+	return admins, nil
+}
+
+// GetChatMembersCount gets the number of members in a chat.
+// Used for tracking group size and estimating sync time.
+func (c *BotClient) GetChatMembersCount(ctx context.Context, chatID int64) (int, error) {
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return 0, fmt.Errorf("rate limiter error: %w", err)
+	}
+
+	config := tgbotapi.ChatMemberCountConfig{
+		ChatConfig: tgbotapi.ChatConfig{
+			ChatID: chatID,
+		},
+	}
+
+	count, err := c.bot.GetChatMembersCount(config)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get chat members count: %w", err)
+	}
+
+	return count, nil
 }

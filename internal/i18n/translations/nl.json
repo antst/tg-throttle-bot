@@ -1,0 +1,542 @@
+{
+  "language_changed": {
+    "description": "Confirmation message when language is successfully changed",
+    "other": "Taal gewijzigd naar Nederlands"
+  },
+  "language_invalid": {
+    "description": "Error message for unsupported language",
+    "other": "Ongeldige taal. Ondersteund: english (en), russian (ru), dutch (nl)"
+  },
+  "language_missing_param": {
+    "description": "Error when no language parameter provided",
+    "other": "Gebruik: /setlanguage <taal>\nOndersteund: english, russian, dutch"
+  },
+  "permission_denied": {
+    "description": "Generic permission denied error",
+    "other": "Alleen beheerders kunnen taalinstellingen wijzigen"
+  },
+  "permission_denied_admin_only": {
+    "description": "Command requires admin privileges",
+    "other": "Deze opdracht is alleen beschikbaar voor groepsbeheerders"
+  },
+  "database_error": {
+    "description": "Generic database operation error",
+    "other": "Kon taalvoorkeur niet opslaan. Probeer opnieuw"
+  },
+  "rate_limit_exceeded": {
+    "description": "User exceeded rate limit",
+    "other": "⚠️ Limiet overschreden in venster {{.window}}: {{.current}}/{{.limit}} tekens gebruikt"
+  },
+  "unknown_command": {
+    "description": "Error message for unknown/unrecognized commands",
+    "other": "❌ Onbekende opdracht: {{.command}}\nGebruik /help om beschikbare opdrachten te zien"
+  },
+  "permission_lost": {
+    "description": "Notification when bot loses required permissions in a group",
+    "other": "⚠️ Snelheidsbeperking tijdelijk uitgeschakeld.\n\nOntbrekende rechten: {{.permissions}}\n\nGeef de bot deze rechten:\n• Kan leden beperken\n• Kan berichten verwijderen\n\nSnelheidsbeperking wordt automatisch hervat wanneer rechten zijn hersteld."
+  },
+  "permission_restored": {
+    "description": "Notification when bot regains required permissions",
+    "other": "✅ Rechten hersteld. Snelheidsbeperking is nu actief."
+  },
+  "message_deleted": {
+    "description": "Message deleted due to rate limit",
+    "other": "Uw bericht is verwijderd (limiet overschreden)"
+  },
+  "window_set_success": {
+    "description": "Window configuration updated successfully",
+    "other": "✅ Venster {{.window}} geconfigureerd: {{.limit}} tekens per {{.duration}}"
+  },
+  "window_set_error": {
+    "description": "Error setting window configuration",
+    "other": "❌ Kon venster {{.window}} niet configureren"
+  },
+  "window_enabled": {
+    "description": "Window enabled successfully",
+    "other": "✅ Venster {{.window}} ingeschakeld"
+  },
+  "window_enabled_success": {
+    "description": "Window enabled successfully (alias)",
+    "other": "✅ Venster {{.window}} ingeschakeld"
+  },
+  "window_disabled": {
+    "description": "Window disabled successfully",
+    "other": "✅ Venster {{.window}} uitgeschakeld"
+  },
+  "window_disabled_success": {
+    "description": "Window disabled successfully (alias)",
+    "other": "✅ Venster {{.window}} uitgeschakeld"
+  },
+  "window_enable_error": {
+    "description": "Error enabling window",
+    "other": "❌ Kon venster {{.window}} niet inschakelen"
+  },
+  "window_disable_error": {
+    "description": "Error disabling window",
+    "other": "❌ Kon venster {{.window}} niet uitschakelen"
+  },
+  "window_show_header": {
+    "description": "Header for window configuration display",
+    "other": "📊 Limietconfiguratie\nTaal: {{.language}}\n\n"
+  },
+  "window_show_entry": {
+    "description": "Single window entry in configuration display",
+    "other": "Venster {{.window}}: {{.limit}} tekens/{{.duration}} [{{.status}}]"
+  },
+  "window_status_enabled": {
+    "description": "Window is enabled",
+    "other": "ingeschakeld"
+  },
+  "window_status_disabled": {
+    "description": "Window is disabled",
+    "other": "uitgeschakeld"
+  },
+  "window_show_none": {
+    "description": "No windows configured",
+    "other": "Geen vensters geconfigureerd"
+  },
+  "invalid_window_slot": {
+    "description": "Invalid window slot identifier",
+    "other": "Ongeldig venster. Gebruik: a, b of c"
+  },
+  "invalid_limit": {
+    "description": "Invalid character limit value",
+    "other": "Ongeldige tekenlimiet. Moet een positief getal zijn"
+  },
+  "invalid_duration": {
+    "description": "Invalid duration format",
+    "other": "Ongeldige duur. Formaat: <waarde><eenheid> (bijv. 30m, 2h, 7d)\nEenheden: m (minuten), h (uren), d (dagen)\nBereik: 1-365"
+  },
+  "duration_out_of_range": {
+    "description": "Duration value out of allowed range",
+    "other": "Duurwaarde buiten bereik. Moet tussen 1 en 365 {{.unit}} zijn"
+  },
+  "setwindow_usage": {
+    "description": "Usage instructions for /setwindow command",
+    "other": "Gebruik: /setwindow <a|b|c> <limiet> <duur>\nVoorbeeld: /setwindow a 1000 30m"
+  },
+  "enablewindow_usage": {
+    "description": "Usage instructions for /enablewindow command",
+    "other": "Gebruik: /enablewindow <a|b|c>"
+  },
+  "disablewindow_usage": {
+    "description": "Usage instructions for /disablewindow command",
+    "other": "Gebruik: /disablewindow <a|b|c>"
+  },
+  "config_usage": {
+    "description": "Usage instructions for /config command",
+    "other": "Gebruik: /config"
+  },
+  "english_name": {
+    "description": "Name of English language in English",
+    "other": "English"
+  },
+  "russian_name": {
+    "description": "Name of Russian language in Dutch",
+    "other": "Russisch"
+  },
+  "dutch_name": {
+    "description": "Name of Dutch language in Dutch",
+    "other": "Nederlands"
+  },
+  "minutes": {
+    "description": "Time unit: minutes",
+    "other": "minuten"
+  },
+  "hours": {
+    "description": "Time unit: hours",
+    "other": "uren"
+  },
+  "days": {
+    "description": "Time unit: days",
+    "other": "dagen"
+  },
+  "minute": {
+    "description": "Time unit: minute (singular)",
+    "other": "minuut"
+  },
+  "hour": {
+    "description": "Time unit: hour (singular)",
+    "other": "uur"
+  },
+  "day": {
+    "description": "Time unit: day (singular)",
+    "other": "dag"
+  },
+  "rate_limit_exceeded_single": {
+    "description": "Rate limit exceeded for one window (sent to private chat)",
+    "other": "🚫 Bericht verwijderd: {{.group}}\n\nJe hebt de limiet overschreden:\n{{.details}}\n\n⏳ Je bericht is verwijderd. Wacht tot je gebruik onder de limiet daalt."
+  },
+  "rate_limit_exceeded_multiple": {
+    "description": "Rate limit exceeded for multiple windows (sent to private chat)",
+    "other": "🚫 Bericht verwijderd: {{.group}}\n\nJe hebt {{.count}} limieten overschreden:\n{{.details}}\n\n⏳ Je bericht is verwijderd. Wacht tot je gebruik onder de limieten daalt."
+  },
+  "rate_limit_window_detail": {
+    "description": "Details for a single violated window",
+    "other": "• Venster {{.window}}: {{.charCount}}/{{.charLimit}} tekens ({{.percentage}}%)"
+  },
+  "rate_limit_warning_95": {
+    "description": "Warning notification when user reaches 95% of rate limit",
+    "other": "🚨 Limietsignaal: {{.group}}\n\nVenster {{.window}}: {{.current}}/{{.limit}} tekens (≥95%)\n\n⚡ KRITIEK: Je bent bijna bij de limiet! Vertraag of je volgende berichten worden verwijderd."
+  },
+  "private_chat_tip": {
+    "description": "Instruction to start private chat with bot",
+    "other": "💬 Tip: Start een privéchat met mij om antwoorden privé te ontvangen."
+  },
+  "group_notification_window_changed": {
+    "description": "Group notification when window configuration changes",
+    "other": "Venster {{.window}} bijgewerkt: {{.limit}} tekens/{{.duration}} door @{{.admin}}"
+  },
+  "group_notification_window_enabled": {
+    "description": "Group notification when window is enabled",
+    "other": "Venster {{.window}} ingeschakeld door @{{.admin}}"
+  },
+  "group_notification_window_disabled": {
+    "description": "Group notification when window is disabled",
+    "other": "Venster {{.window}} uitgeschakeld door @{{.admin}}"
+  },
+  "group_notification_language_changed": {
+    "description": "Group notification when language changes",
+    "other": "Groepstaal gewijzigd naar {{.language}} door @{{.admin}}"
+  },
+  "group_notification_paused": {
+    "description": "Group notification when rate limiting is paused",
+    "other": "Snelheidsbeperking gepauzeerd tot {{.until}} door @{{.admin}}"
+  },
+  "group_notification_resumed": {
+    "description": "Group notification when rate limiting is resumed",
+    "other": "Snelheidsbeperking hervat door @{{.admin}}"
+  },
+  "group.notification.window_updated": {
+    "description": "Group notification when window configuration is updated",
+    "other": "Venster {{.Slot}} bijgewerkt door {{.Actor}}"
+  },
+  "group.notification.window_enabled": {
+    "description": "Group notification when window is enabled",
+    "other": "Venster {{.Slot}} ingeschakeld door {{.Actor}}"
+  },
+  "group.notification.window_disabled": {
+    "description": "Group notification when window is disabled",
+    "other": "Venster {{.Slot}} uitgeschakeld door {{.Actor}}"
+  },
+  "group.notification.language_changed": {
+    "description": "Group notification when language is changed",
+    "other": "Taal gewijzigd naar {{.Language}} door {{.Actor}}"
+  },
+  "group.notification.group_paused": {
+    "description": "Group notification when rate limiting is paused",
+    "other": "Snelheidsbeperking gepauzeerd door {{.Actor}}"
+  },
+  "group.notification.group_resumed": {
+    "description": "Group notification when rate limiting is resumed",
+    "other": "Snelheidsbeperking hervat door {{.Actor}}"
+  },
+  "group.notification.config_changed": {
+    "description": "Generic group notification for configuration changes",
+    "other": "Configuratie gewijzigd door {{.Actor}}"
+  },
+  "cmd_error_not_admin": {
+    "description": "User must be admin to perform action",
+    "other": "❌ Je moet een beheerder zijn om {{.action}}."
+  },
+  "cmd_error_invalid_user_id": {
+    "description": "Invalid user ID provided",
+    "other": "❌ Ongeldige gebruikers-ID"
+  },
+  "cmd_error_database_error": {
+    "description": "Generic database error",
+    "other": "❌ Databasefout. Probeer het opnieuw."
+  },
+  "cmd_error_no_rate_limiting": {
+    "description": "No rate limiting configured for group",
+    "other": "📊 Nog geen snelheidsbeperking geconfigureerd voor deze groep."
+  },
+  "cmd_error_invalid_language": {
+    "description": "Invalid language code provided",
+    "other": "❌ Ongeldige taal. Ondersteund: en (English), ru (Русский), nl (Nederlands)"
+  },
+  "cmd_setwindow_usage_private": {
+    "description": "Usage help for setwindow in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /setwindow @groepnaam <a|b|c> <limiet> <duur>\nVoorbeeld: /setwindow @mygroup a 1000 30m"
+  },
+  "cmd_setwindow_usage_group": {
+    "description": "Usage help for setwindow in group",
+    "other": "❌ Gebruik: /setwindow <a|b|c> <limiet> <duur>\nVoorbeelden:\n  /setwindow a 1000 30m\n  /setwindow b 5000 2h\n  /setwindow c 10000 7d"
+  },
+  "cmd_setwindow_success": {
+    "description": "Window configured successfully",
+    "other": "✅ Venster {{.window}} geconfigureerd:\n  • Limiet: {{.limit}} tekens\n  • Duur: {{.duration}}\n  • Status: {{.status}}"
+  },
+  "cmd_setwindow_invalid_slot": {
+    "description": "Invalid window slot provided",
+    "other": "❌ Ongeldig vensterslot '{{.slot}}'. Moet zijn: a, b of c"
+  },
+  "cmd_setwindow_invalid_limit": {
+    "description": "Invalid character limit provided",
+    "other": "❌ Ongeldige tekenlimiet: {{.error}}"
+  },
+  "cmd_setwindow_invalid_duration": {
+    "description": "Invalid duration format",
+    "other": "❌ Ongeldige duur: {{.error}}"
+  },
+  "cmd_config_usage_private": {
+    "description": "Usage help for config in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /config @groepnaam"
+  },
+  "cmd_config_no_limits": {
+    "description": "No rate limiting configured",
+    "other": "📊 Nog geen snelheidsbeperking geconfigureerd voor deze groep.\nBeheerder kan /setwindow gebruiken om vensters te configureren."
+  },
+  "cmd_config_title": {
+    "description": "Config display title",
+    "other": "📊 **Snelheidsbeperkingsconfiguratie**\n\nGroep: {{.group}}"
+  },
+  "cmd_config_paused": {
+    "description": "Status line when paused",
+    "other": "\n⏸ **Status**: Gepauzeerd{{.until}}"
+  },
+  "cmd_config_active": {
+    "description": "Status line when active",
+    "other": "\n▶️ **Status**: Actief"
+  },
+  "cmd_config_window_enabled": {
+    "description": "Enabled window display",
+    "other": "\n\n✅ **Venster {{.slot}}** (ingeschakeld)\n  • Limiet: {{.limit}} tekens\n  • Duur: {{.duration}}"
+  },
+  "cmd_config_window_disabled": {
+    "description": "Disabled window display",
+    "other": "\n\n🚫 **Venster {{.slot}}** (uitgeschakeld)\n  • Limiet: {{.limit}} tekens\n  • Duur: {{.duration}}"
+  },
+  "cmd_config_usage_hint": {
+    "description": "Hint for enabling/disabling windows",
+    "other": "\n\n💡 Gebruik /enablewindow of /disablewindow om vensters te schakelen."
+  },
+  "cmd_enablewindow_usage_private": {
+    "description": "Usage help for enablewindow in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /enablewindow @groepnaam <a|b|c>"
+  },
+  "cmd_enablewindow_usage_group": {
+    "description": "Usage help for enablewindow in group",
+    "other": "❌ Gebruik: /enablewindow <a|b|c>"
+  },
+  "cmd_enablewindow_success": {
+    "description": "Window enabled successfully",
+    "other": "✅ Venster {{.window}} ingeschakeld."
+  },
+  "cmd_enablewindow_invalid_slot": {
+    "description": "Invalid window slot",
+    "other": "❌ Ongeldig vensterslot '{{.slot}}'. Moet zijn: a, b of c"
+  },
+  "cmd_enablewindow_not_configured": {
+    "description": "Window not configured yet",
+    "other": "❌ Venster {{.window}} is nog niet geconfigureerd. Gebruik eerst /setwindow."
+  },
+  "cmd_disablewindow_usage_private": {
+    "description": "Usage help for disablewindow in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /disablewindow @groepnaam <a|b|c>"
+  },
+  "cmd_disablewindow_usage_group": {
+    "description": "Usage help for disablewindow in group",
+    "other": "❌ Gebruik: /disablewindow <a|b|c>"
+  },
+  "cmd_disablewindow_success": {
+    "description": "Window disabled successfully",
+    "other": "✅ Venster {{.window}} uitgeschakeld."
+  },
+  "cmd_disablewindow_invalid_slot": {
+    "description": "Invalid window slot",
+    "other": "❌ Ongeldig vensterslot '{{.slot}}'. Moet zijn: a, b of c"
+  },
+  "cmd_disablewindow_not_configured": {
+    "description": "Window not configured",
+    "other": "❌ Venster {{.window}} is nog niet geconfigureerd."
+  },
+  "cmd_override_usage_private": {
+    "description": "Usage help for override in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /override @groepnaam <user_id|@username> <modus> [duur]\nModi: whitelist, blacklist, clear"
+  },
+  "cmd_override_usage_group": {
+    "description": "Usage help for override in group",
+    "other": "❌ Gebruik: /override <user_id|@username> <modus> [duur]\nModi: whitelist, blacklist, clear\nVoorbeelden:\n  /override @user whitelist\n  /override 12345 blacklist 7d\n  /override @user clear"
+  },
+  "cmd_override_invalid_mode": {
+    "description": "Invalid override mode",
+    "other": "❌ Ongeldige modus '{{.mode}}'. Moet zijn: whitelist, blacklist of clear"
+  },
+  "cmd_override_invalid_duration": {
+    "description": "Invalid duration format",
+    "other": "❌ Ongeldige duur: {{.error}}"
+  },
+  "cmd_override_whitelist_success": {
+    "description": "User whitelisted successfully",
+    "other": "✅ Gebruiker {{.user}} op witte lijst gezet{{.duration}}."
+  },
+  "cmd_override_blacklist_success": {
+    "description": "User blacklisted successfully",
+    "other": "✅ Gebruiker {{.user}} op zwarte lijst gezet{{.duration}}."
+  },
+  "cmd_override_cleared": {
+    "description": "Override removed successfully",
+    "other": "✅ Overschrijving verwijderd voor gebruiker {{.user}}."
+  },
+  "cmd_checkuser_usage_private": {
+    "description": "Usage help for checkuser in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /checkuser @groepnaam <user_id|@username>"
+  },
+  "cmd_checkuser_usage_group": {
+    "description": "Usage help for checkuser in group",
+    "other": "❌ Gebruik: /checkuser <user_id|@username>"
+  },
+  "cmd_checkuser_no_config": {
+    "description": "No rate limiting configured",
+    "other": "📊 Nog geen snelheidsbeperking geconfigureerd voor deze groep."
+  },
+  "cmd_checkuser_title": {
+    "description": "Checkuser display title",
+    "other": "👤 **Gebruikersstatus: {{.user}}**\n\nGroep: {{.group}}"
+  },
+  "cmd_checkuser_override_whitelist": {
+    "description": "User has whitelist override",
+    "other": "\n\n✅ **Handmatige overschrijving**: Op witte lijst (vrijgesteld van alle limieten){{.expires}}"
+  },
+  "cmd_checkuser_override_blacklist": {
+    "description": "User has blacklist override",
+    "other": "\n\n🚫 **Handmatige overschrijving**: Op zwarte lijst (alle berichten verwijderd){{.expires}}"
+  },
+  "cmd_checkuser_no_override": {
+    "description": "No manual override set",
+    "other": "\n\nℹ️ Geen handmatige overschrijving ingesteld."
+  },
+  "cmd_checkuser_window_ok": {
+    "description": "Window status OK",
+    "other": "\n\n✅ **Venster {{.slot}}**: {{.current}}/{{.limit}} tekens ({{.percentage}}%)"
+  },
+  "cmd_checkuser_window_warning": {
+    "description": "Window approaching limit",
+    "other": "\n\n⚠️ **Venster {{.slot}}**: {{.current}}/{{.limit}} tekens ({{.percentage}}% - nadert limiet)"
+  },
+  "cmd_checkuser_window_exceeded": {
+    "description": "Window limit exceeded",
+    "other": "\n\n❌ **Venster {{.slot}}**: {{.current}}/{{.limit}} tekens ({{.percentage}}% - OVERSCHREDEN)"
+  },
+  "cmd_checkuser_window_disabled": {
+    "description": "Window is disabled",
+    "other": "\n\n🚫 **Venster {{.slot}}**: Uitgeschakeld"
+  },
+  "cmd_showoverrides_usage_private": {
+    "description": "Usage help for showoverrides in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /showoverrides @groepnaam"
+  },
+  "cmd_showoverrides_no_overrides": {
+    "description": "No overrides set",
+    "other": "📋 **Handmatige overschrijvingen**\n\nGeen handmatige overschrijvingen ingesteld voor deze groep.\n\n💡 Gebruik /override <user_id|@username> <whitelist|blacklist|clear> om overschrijvingen te beheren."
+  },
+  "cmd_showoverrides_title": {
+    "description": "Showoverrides display title",
+    "other": "📋 **Handmatige overschrijvingen**\n\nGroep: {{.group}}"
+  },
+  "cmd_showoverrides_whitelist_entry": {
+    "description": "Whitelist override entry",
+    "other": "\n\n✅ {{.user}}\n  • Modus: Op witte lijst (vrijgesteld van limieten)\n  • Ingesteld: {{.created}}{{.expires}}"
+  },
+  "cmd_showoverrides_blacklist_entry": {
+    "description": "Blacklist override entry",
+    "other": "\n\n🚫 {{.user}}\n  • Modus: Op zwarte lijst (alle berichten verwijderd)\n  • Ingesteld: {{.created}}{{.expires}}"
+  },
+  "cmd_setlanguage_usage_private_with_group": {
+    "description": "Usage help for setlanguage in private chat with group option",
+    "other": "❌ Gebruik:\n  /setlanguage en  (stelt taal in voor privéchat)\n  /setlanguage @groepnaam en  (stelt taal in voor groep)"
+  },
+  "cmd_setlanguage_usage": {
+    "description": "Usage help for setlanguage",
+    "other": "❌ Gebruik: /setlanguage <taal>\nVoorbeeld: /setlanguage en"
+  },
+  "cmd_setlanguage_success_user": {
+    "description": "User language set successfully",
+    "other": "✅ Je taal is ingesteld op: {{.language}}\n\nAlle botreacties zijn nu in {{.language_name}}."
+  },
+  "cmd_setlanguage_success_group": {
+    "description": "Group language set successfully",
+    "other": "✅ Groepstaal ingesteld op: {{.language}}\n\nAlle groepmeldingen zijn nu in {{.language_name}}."
+  },
+  "cmd_pause_usage_private": {
+    "description": "Usage help for pause in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /pause @groepnaam [duur]"
+  },
+  "cmd_pause_usage_group": {
+    "description": "Usage help for pause in group",
+    "other": "❌ Gebruik: /pause [duur]\nVoorbeelden:\n  /pause (pauzeer voor onbepaalde tijd)\n  /pause 30m (pauzeer voor 30 minuten)\n  /pause 2h (pauzeer voor 2 uur)"
+  },
+  "cmd_pause_invalid_duration": {
+    "description": "Invalid pause duration",
+    "other": "❌ Ongeldige duur: {{.error}}"
+  },
+  "cmd_pause_success_temporary": {
+    "description": "Rate limiting paused temporarily",
+    "other": "✅ Snelheidsbeperking gepauzeerd voor {{.duration}}.\n\nAlle gebruikers kunnen onbeperkt berichten sturen tot {{.until}}.\nSnelheidsbeperking wordt automatisch hervat."
+  },
+  "cmd_pause_success_indefinite": {
+    "description": "Rate limiting paused indefinitely",
+    "other": "✅ Snelheidsbeperking voor onbepaalde tijd gepauzeerd.\nAlle gebruikers kunnen onbeperkt berichten sturen totdat je /resume gebruikt."
+  },
+  "cmd_resume_usage_private": {
+    "description": "Usage help for resume in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /resume @groepnaam"
+  },
+  "cmd_resume_not_paused": {
+    "description": "Rate limiting not paused",
+    "other": "ℹ️ Snelheidsbeperking is niet gepauzeerd voor deze groep."
+  },
+  "cmd_resume_success": {
+    "description": "Rate limiting resumed successfully",
+    "other": "✅ Snelheidsbeperking hervat.\nAlle ingeschakelde vensters handhaven nu weer limieten."
+  },
+  "cmd_mystatus_usage_private": {
+    "description": "Usage help for mystatus in private chat",
+    "other": "❌ Gebruik vanuit privéchat: /mystatus @groepnaam"
+  },
+  "cmd_mystatus_no_config": {
+    "description": "No rate limiting configured",
+    "other": "📊 Geen snelheidsbeperking geconfigureerd voor deze groep."
+  },
+  "cmd_mystatus_title": {
+    "description": "Mystatus display title",
+    "other": "📊 **Je status**\n\nGroep: {{.group}}"
+  },
+  "cmd_mystatus_paused": {
+    "description": "Rate limiting is paused",
+    "other": "\n\n⏸ Snelheidsbeperking is momenteel gepauzeerd{{.until}}."
+  },
+  "cmd_mystatus_override_whitelist": {
+    "description": "User is whitelisted",
+    "other": "\n\n✅ Je staat op de witte lijst (vrijgesteld van alle limieten){{.expires}}."
+  },
+  "cmd_mystatus_override_blacklist": {
+    "description": "User is blacklisted",
+    "other": "\n\n🚫 Je staat op de zwarte lijst (al je berichten worden verwijderd){{.expires}}."
+  },
+  "cmd_mystatus_window_ok": {
+    "description": "Window status OK",
+    "other": "\n\n✅ **Venster {{.slot}}**: {{.current}}/{{.limit}} tekens ({{.percentage}}%)"
+  },
+  "cmd_mystatus_window_warning": {
+    "description": "Window approaching limit",
+    "other": "\n\n⚠️ **Venster {{.slot}}**: {{.current}}/{{.limit}} tekens ({{.percentage}}% - nadert limiet!)"
+  },
+  "cmd_mystatus_window_exceeded": {
+    "description": "Window limit exceeded",
+    "other": "\n\n❌ **Venster {{.slot}}**: {{.current}}/{{.limit}} tekens ({{.percentage}}% - limiet overschreden!)"
+  },
+  "cmd_mystatus_window_disabled": {
+    "description": "Window is disabled",
+    "other": "\n\n🚫 **Venster {{.slot}}**: Uitgeschakeld"
+  },
+  "cmd_help_user": {
+    "description": "User help text (shown to everyone)",
+    "other": "🤖 Throttle Bot - Multi-venster snelheidsbegrenzer\n\n👤 **Jouw commando's:**\n• /help - Toon dit helpbericht\n• /help admin - Toon beheerdercommando's\n• /mystatus @groep - Controleer je huidige gebruik\n  Voorbeeld: /mystatus @home\n• /config @groep - Toon configuratie\n  Voorbeeld: /config @home\n• /setlanguage <taal> - Stel je taal in\n  Voorbeeld: /setlanguage dutch\n\n💡 **Hoe het werkt:**\nElke groep heeft maximaal 3 snelheidsbeperkingsvensters (A, B, C) met verschillende:\n- Tekenlimieten (bijv. 1000, 5000, 10000 tekens)\n- Tijdvensters (bijv. 30 minuten, 2 uur, 7 dagen)\n\nJe berichten tellen mee voor alle actieve vensters. Als je de limiet van ELK venster overschrijdt, worden je berichten automatisch verwijderd totdat het venster wordt gereset.\n\n🎯 **Overschrijvingsstatussen:**\n- **Normaal**: Snelheidsbeperking is van toepassing (standaard)\n- **Witte lijst**: Je berichten zijn altijd toegestaan ✅\n- **Zwarte lijst**: Je berichten worden altijd geblokkeerd ❌\n\n💬 Neem contact op met een beheerder als je hulp nodig hebt!"
+  },
+  "cmd_help_admin": {
+    "description": "Admin help text (additional commands for admins)",
+    "other": "\n\n� **Beheerdercommando's:**\n\n**Vensterbeheer:**\n• /setwindow @groep <a|b|c> <limiet> <duur>\n  Voorbeeld: /setwindow @home a 1000 30m\n• /enablewindow @groep <a|b|c>\n  Voorbeeld: /enablewindow @home a\n• /disablewindow @groep <a|b|c>\n  Voorbeeld: /disablewindow @home b\n\n**Gebruikersbeheer:**\n• /override @groep <user_id|@username> <whitelist|blacklist|clear> [duur]\n  Voorbeeld: /override @home @alice whitelist 7d\n  Voorbeeld: /override @home 123456789 blacklist\n  Voorbeeld: /override @home @bob clear\n• /checkuser @groep <user_id|@username>\n  Voorbeeld: /checkuser @home @alice\n• /overrides @groep\n  Voorbeeld: /overrides @home\n\n**Groepsbesturing:**\n• /pause @groep [duur]\n  Voorbeeld: /pause @home 2h\n  Voorbeeld: /pause @home (permanent)\n• /resume @groep\n  Voorbeeld: /resume @home\n\n**Taal:**\n• /setlanguage <taal> (voor persoonlijk gebruik)\n  Voorbeeld: /setlanguage dutch\n• /setlanguage @groep <taal> (voor groepstaal instellen)\n  Voorbeeld: /setlanguage @home dutch\n  Beschikbaar: english, russian, dutch (of en, ru, nl)\n\n📊 **Configuratie bekijken:**\n• /config @groep - Toon alle vensterinstellingen\n  Voorbeeld: /config @home\n\n⏰ **Duurformaten:** Xm (minuten), Xh (uren), Xd (dagen)\nVoorbeelden: 30m, 2h, 7d, 365d"
+  }
+}

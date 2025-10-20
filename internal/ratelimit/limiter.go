@@ -61,17 +61,17 @@ func (l *Limiter) CheckMessageMultiWindow(ctx context.Context, chatID, userID in
 			percentage = (projectedUsage * 100) / window.CharLimit
 		}
 
-		// Determine violation and warning level
+		// Determine violation and warning status
 		violated := projectedUsage > window.CharLimit
-		warningLevel := calculateWarningLevel(percentage)
+		shouldWarn := percentage >= 95 // Spam warning at 95%+
 
 		windowResult := &WindowEvaluationResult{
-			SlotID:       window.SlotID,
-			CharCount:    projectedUsage,
-			CharLimit:    window.CharLimit,
-			Percentage:   percentage,
-			Violated:     violated,
-			WarningLevel: warningLevel,
+			SlotID:     window.SlotID,
+			CharCount:  projectedUsage,
+			CharLimit:  window.CharLimit,
+			Percentage: percentage,
+			Violated:   violated,
+			ShouldWarn: shouldWarn,
 		}
 
 		result.Windows = append(result.Windows, windowResult)
@@ -82,9 +82,9 @@ func (l *Limiter) CheckMessageMultiWindow(ctx context.Context, chatID, userID in
 			result.AllowMessage = false
 		}
 
-		// Track highest warning level
-		if warningLevel > result.HighestWarning {
-			result.HighestWarning = warningLevel
+		// Track windows requiring warnings (≥95%)
+		if shouldWarn {
+			result.NewWarnings = append(result.NewWarnings, windowResult)
 		}
 	}
 
@@ -98,35 +98,20 @@ func (l *Limiter) RecordMessageForAllWindows(ctx context.Context, chatID, userID
 	return l.storage.RecordMessage(ctx, userID, chatID, charCount)
 }
 
-// calculateWarningLevel returns warning threshold (0, 80, 90, or 100)
-func calculateWarningLevel(percentage int) int {
-	switch {
-	case percentage >= 100:
-		return 100
-	case percentage >= 90:
-		return 90
-	case percentage >= 80:
-		return 80
-	default:
-		return 0
-	}
-}
-
 // MultiWindowEvaluationResult contains results from evaluating all windows
 type MultiWindowEvaluationResult struct {
 	Windows         []*WindowEvaluationResult
 	ViolatedWindows []string
 	AllowMessage    bool
-	HighestWarning  int
 	NewWarnings     []*WindowEvaluationResult
 }
 
 // WindowEvaluationResult contains the result of evaluating a single window
 type WindowEvaluationResult struct {
-	SlotID       string
-	CharCount    int
-	CharLimit    int
-	Percentage   int
-	Violated     bool
-	WarningLevel int
+	SlotID     string
+	CharCount  int
+	CharLimit  int
+	Percentage int
+	Violated   bool
+	ShouldWarn bool // True when ≥95% (spam warnings on every message)
 }

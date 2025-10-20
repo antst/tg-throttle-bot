@@ -14,6 +14,27 @@ type Group struct {
 	ResumeAt  pgtype.Timestamptz `json:"resume_at"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	Language  string             `json:"language"`
+	Username  *string            `json:"username"`
+}
+
+// Tracks group membership status with soft delete pattern
+type GroupMembership struct {
+	ID     int64 `json:"id"`
+	ChatID int64 `json:"chat_id"`
+	UserID int64 `json:"user_id"`
+	// Membership status: active, left, kicked, banned
+	Status string `json:"status"`
+	// First join timestamp (never updated on rejoin)
+	JoinedAt pgtype.Timestamptz `json:"joined_at"`
+	// Most recent leave/kick timestamp
+	LeftAt pgtype.Timestamptz `json:"left_at"`
+	// Last status change (for idempotent updates)
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	// True if user is admin/creator in the group
+	IsAdmin bool `json:"is_admin"`
+	// True if user can send messages (not restricted)
+	CanSendMessages bool `json:"can_send_messages"`
 }
 
 type SimpleMessage struct {
@@ -24,11 +45,44 @@ type SimpleMessage struct {
 	SentAt    pgtype.Timestamptz `json:"sent_at"`
 }
 
+// Audit trail for sync operations (multiple rows per group)
+type SyncEvent struct {
+	ID         int64 `json:"id"`
+	MetadataID int64 `json:"metadata_id"`
+	// Type of sync: initial_sync, periodic_sync, notification_processed
+	EventType        string             `json:"event_type"`
+	StartedAt        pgtype.Timestamptz `json:"started_at"`
+	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
+	Status           string             `json:"status"`
+	ErrorMessage     *string            `json:"error_message"`
+	MembersProcessed *int32             `json:"members_processed"`
+	MembersAdded     *int32             `json:"members_added"`
+	MembersUpdated   *int32             `json:"members_updated"`
+	MembersRemoved   *int32             `json:"members_removed"`
+}
+
+// Tracks sync status for each group (one row per group)
+type SyncMetadatum struct {
+	ID     int64 `json:"id"`
+	ChatID int64 `json:"chat_id"`
+	// Current sync state: pending, in_progress, completed, failed
+	SyncStatus string             `json:"sync_status"`
+	LastSyncAt pgtype.Timestamptz `json:"last_sync_at"`
+	// When the next periodic sync should run (every 24h)
+	NextSyncAt     pgtype.Timestamptz `json:"next_sync_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	TotalMembers   *int32             `json:"total_members"`
+	FailedAttempts *int32             `json:"failed_attempts"`
+	LastError      *string            `json:"last_error"`
+}
+
 type User struct {
 	UserID    int64              `json:"user_id"`
 	Username  *string            `json:"username"`
 	FirstSeen pgtype.Timestamptz `json:"first_seen"`
 	LastSeen  pgtype.Timestamptz `json:"last_seen"`
+	Language  *string            `json:"language"`
 }
 
 type UserOverride struct {

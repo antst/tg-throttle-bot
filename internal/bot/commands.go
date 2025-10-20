@@ -9,8 +9,34 @@ import (
 	"strings"
 	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	i18nPkg "github.com/antst/tg-throttle-bot/internal/i18n"
 	"github.com/antst/tg-throttle-bot/internal/ratelimit"
 	"github.com/antst/tg-throttle-bot/internal/telegram"
+)
+
+// ValidationError wraps user-facing validation error messages
+// These are distinguished from system errors and should not trigger group notifications
+type ValidationError struct {
+	Message string
+}
+
+func (e *ValidationError) Error() string {
+	return e.Message
+}
+
+// CommandResult contains the result of a command execution
+type CommandResult struct {
+	Response          string // Private message to user
+	GroupNotification string // Optional notification to send to group (empty = no notification)
+}
+
+// Context keys for passing metadata between command handlers and router
+type contextKey string
+
+const (
+	contextKeyTargetGroupID contextKey = "targetGroupID"
 )
 
 // Constants for repeated strings
@@ -30,6 +56,15 @@ type Command struct {
 	Args []string
 }
 
+// CommandContext contains execution context for a command
+type CommandContext struct {
+	ChatID       int64  // Source chat ID (where command was sent)
+	UserID       int64  // User who sent the command
+	ChatType     string // "private", "group", or "supergroup"
+	TargetGroup  int64  // Target group ID (may differ from ChatID for private→group commands)
+	UserLanguage string // User's preferred language (en/ru/nl) - fetched once at command start
+}
+
 // CommandHandler handles all bot commands with clean multi-window implementation
 type CommandHandler struct {
 	store  ratelimit.MultiWindowStorage
@@ -47,6 +82,12 @@ func NewCommandHandler(store ratelimit.MultiWindowStorage, client telegram.Clien
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+// localize is a helper to localize messages using user's language from CommandContext
+func localize(cmdCtx CommandContext, key string, data map[string]interface{}) string {
+	localizer := i18nPkg.GetLocalizer(cmdCtx.UserLanguage)
+	return i18nPkg.Localize(localizer, key, data)
+}
 
 // ParseCommand extracts command name and arguments from message text.
 func ParseCommand(text string) (*Command, error) {
@@ -195,72 +236,19 @@ func FormatWindowDuration(value int, unit string) string {
 // ============================================================================
 
 // HandleHelp handles /help command
-func (h *CommandHandler) HandleHelp(ctx context.Context, chatID, userID int64) (string, error) {
-	// Check if user is admin
-	isAdmin := false
-	if chatID < 0 { // Group chat
-		var err error
-		isAdmin, err = h.client.IsAdmin(ctx, chatID, userID)
-		if err != nil {
-			// If permission check fails, show user help (safer default)
-			isAdmin = false
-		}
+func (h *CommandHandler) HandleHelp(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	// Check if user requested admin help explicitly
+	showAdminHelp := false
+	if len(args) > 0 && strings.ToLower(args[0]) == "admin" {
+		showAdminHelp = true
 	}
 
-	// User help (shown to everyone)
-	userHelp := `🤖 Throttle Bot - Multi-Window Rate Limiter
+	// Get localized help text
+	userHelp := localize(cmdCtx, "cmd_help_user", nil)
 
-👤 **Your Commands:**
-• /help - Show this help message
-• /mystatus - Check your current usage across all windows
-• /windows - Show rate limiting configuration
-
-💡 **How It Works:**
-Each group has up to 3 rate limiting windows (A, B, C) with different:
-- Character limits (e.g., 1000, 5000, 10000 chars)
-- Time windows (e.g., 30 minutes, 2 hours, 7 days)
-
-Your messages count toward all active windows. If you exceed ANY window's limit, your messages will be automatically deleted until the window resets.
-
-🎯 **Override States:**
-- **Normal**: Rate limiting applies (default)
-- **Whitelisted**: Your messages always allowed ✅
-- **Blacklisted**: Your messages always blocked ❌
-
-� Contact an admin if you need help!`
-
-	// Admin help (additional commands for admins)
-	adminHelp := `
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👑 **ADMIN COMMANDS**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📝 **Window Configuration:**
-• /setwindow <a|b|c> <limit> <duration> - Configure window
-  Example: /setwindow a 1000 30m
-• /enablewindow <a|b|c> - Enable a window
-• /disablewindow <a|b|c> - Disable a window
-
-🔧 **User Management:**
-• /checkuser <user_id|@username> - Check specific user's usage
-• /overrides - List all users with manual overrides
-• /override <user_id|@username> <mode> [duration] - Manage user overrides
-  **Modes**: whitelist | blacklist | clear
-  **Examples**:
-    /override 123456789 whitelist - Bypass all rate limiting
-    /override @testuser whitelist 7d - Whitelist by username (7 days)
-    /override 123456789 blacklist 2h - Block all messages (2 hours)
-    /override @testuser clear - Return to normal
-
-⏸️ **Group Controls:**
-• /pause [duration] - Pause ALL rate limiting (optional: 30m, 2h, 7d)
-• /resume - Resume rate limiting
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
-
-	if isAdmin {
-		return userHelp + adminHelp, nil
+	if showAdminHelp {
+		adminHelp := localize(cmdCtx, "cmd_help_admin", nil)
+		return userHelp + "\n\n" + adminHelp, nil
 	}
 
 	return userHelp, nil
@@ -268,33 +256,32 @@ Your messages count toward all active windows. If you exceed ANY window's limit,
 
 // HandleExempt handles /exempt command
 // HandleOverride manages user overrides (whitelist/blacklist/clear)
-func (h *CommandHandler) HandleOverride(ctx context.Context, chatID, userID int64, args []string) (string, error) {
-	// Check admin permission
-	isAdmin, err := h.client.IsAdmin(ctx, chatID, userID)
+func (h *CommandHandler) HandleOverride(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Note: args already has group identifier removed by handler.go
+	// In private chat: /override @groupname @user whitelist → args = ["@user", "whitelist"]
+	// In group chat: /override @user whitelist → args = ["@user", "whitelist"]
+
+	// Validate minimum arguments
+	if len(args) < 2 {
+		return "", &ValidationError{localize(cmdCtx, "cmd_override_usage_private", nil)}
+	}
+
+	// Check admin permission on TARGET group
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check permissions: %w", err)
 	}
 
 	if !isAdmin {
-		return "❌ You must be an admin to manage user overrides.", nil
-	}
-
-	// Validate arguments
-	if len(args) < 2 {
-		return "❌ Usage: /override <user_id|@username> <mode> [duration]\n\n" +
-			"**Modes:**\n" +
-			"• `whitelist` - Bypass all rate limiting (always allow)\n" +
-			"• `blacklist` - Block all messages (always delete)\n" +
-			"• `clear` - Remove override (return to normal rate limiting)\n\n" +
-			"**Examples:**\n" +
-			"• /override 123456789 whitelist - Permanent whitelist\n" +
-			"• /override @testuser whitelist 7d - Temporary whitelist by username\n" +
-			"• /override 123456789 blacklist 2h - Temporary blacklist\n" +
-			"• /override @testuser clear - Reset to normal", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_error_not_admin", map[string]interface{}{
+			"action": "manage user overrides",
+		})}
 	}
 
 	// Parse target user ID or @username
-	targetUserID, err := h.ParseUserIdentifier(ctx, chatID, args[0])
+	targetUserID, err := h.ParseUserIdentifier(ctx, targetGroupID, args[0])
 	if err != nil {
 		return fmt.Sprintf("❌ %v", err), nil
 	}
@@ -304,34 +291,44 @@ func (h *CommandHandler) HandleOverride(ctx context.Context, chatID, userID int6
 
 	// Handle clear mode (remove override)
 	if mode == "clear" || mode == "reset" || mode == "off" {
-		err = h.store.RemoveUserOverride(ctx, chatID, targetUserID)
+		err = h.store.RemoveUserOverride(ctx, targetGroupID, targetUserID)
 		if err != nil {
 			return "", fmt.Errorf("failed to remove user override: %w", err)
 		}
 		userDisplay := h.formatUserDisplay(ctx, targetUserID)
-		return fmt.Sprintf("✅ User %s override cleared. Normal rate limiting will apply.", userDisplay), nil
+		return localize(cmdCtx, "cmd_override_cleared", map[string]interface{}{
+			"user": userDisplay,
+		}), nil
 	}
 
 	// Validate mode
 	if mode != "whitelist" && mode != "blacklist" {
-		return "❌ Invalid mode. Must be: whitelist, blacklist, or clear", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_override_invalid_mode", map[string]interface{}{
+			"mode": mode,
+		})}
 	}
 
 	// Parse optional duration
 	var expiresAt *time.Time
+	var durationStr string
 	if len(args) >= 3 {
 		durationValue, durationUnit, err := ParseDurationString(args[2])
 		if err != nil {
-			return fmt.Sprintf("❌ Invalid duration: %v\n\nExamples: 30m, 2h, 7d", err), nil
+			return "", &ValidationError{localize(cmdCtx, "cmd_override_invalid_duration", map[string]interface{}{
+				"error": err.Error(),
+			})}
 		}
 
 		durationSeconds, err := ratelimit.CalculateWindowDuration(durationValue, durationUnit)
 		if err != nil {
-			return fmt.Sprintf("❌ %v", err), nil
+			return "", &ValidationError{localize(cmdCtx, "cmd_override_invalid_duration", map[string]interface{}{
+				"error": err.Error(),
+			})}
 		}
 
 		expiryTime := time.Now().Add(time.Duration(durationSeconds) * time.Second)
 		expiresAt = &expiryTime
+		durationStr = FormatWindowDuration(durationValue, durationUnit)
 	}
 
 	// Set override state
@@ -348,51 +345,72 @@ func (h *CommandHandler) HandleOverride(ctx context.Context, chatID, userID int6
 		reason = "blacklisted by admin"
 	}
 
-	err = h.store.SetUserOverride(ctx, chatID, targetUserID, overrideState, reason, userID, expiresAt)
+	err = h.store.SetUserOverride(ctx, cmdCtx.ChatID, targetUserID, overrideState, reason, cmdCtx.UserID, expiresAt)
 	if err != nil {
 		return "", fmt.Errorf("failed to set user override: %w", err)
 	}
 
 	// Build response message
-	var modeDesc, effect string
-	if mode == "whitelist" {
-		modeDesc = "whitelisted"
-		effect = "bypasses all rate limiting"
-	} else {
-		modeDesc = "blacklisted"
-		effect = "all messages will be blocked"
-	}
-
 	userDisplay := h.formatUserDisplay(ctx, targetUserID)
-
+	var durationSuffix string
 	if expiresAt != nil {
-		durationValue, durationUnit, _ := ParseDurationString(args[2])
-		durationStr := FormatWindowDuration(durationValue, durationUnit)
-		return fmt.Sprintf("✅ User %s is now **%s** (%s) for %s.", userDisplay, modeDesc, effect, durationStr), nil
+		durationSuffix = " for " + durationStr
+	} else {
+		durationSuffix = " permanently"
 	}
-	return fmt.Sprintf("✅ User %s is now **permanently %s** (%s).", userDisplay, modeDesc, effect), nil
+
+	if mode == "whitelist" {
+		return localize(cmdCtx, "cmd_override_whitelist_success", map[string]interface{}{
+			"user":     userDisplay,
+			"duration": durationSuffix,
+		}), nil
+	}
+	return localize(cmdCtx, "cmd_override_blacklist_success", map[string]interface{}{
+		"user":     userDisplay,
+		"duration": durationSuffix,
+	}), nil
 }
 
 // HandleMyStatus handles /mystatus command
-func (h *CommandHandler) HandleMyStatus(ctx context.Context, chatID, userID int64) (string, error) {
-	// Get user's window stats
-	stats, err := h.store.GetUserWindowStats(ctx, userID, chatID)
+func (h *CommandHandler) HandleMyStatus(ctx context.Context, cmdCtx CommandContext) (string, error) {
+	// Use target group ID (resolved in handler.go)
+	// In private chat: first arg was @groupname (already stripped by handler.go resolution)
+	// In group chat: cmdCtx.TargetGroup == cmdCtx.ChatID
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Get user's window stats from TARGET group
+	stats, err := h.store.GetUserWindowStats(ctx, cmdCtx.UserID, targetGroupID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get window stats: %w", err)
 	}
 
 	if len(stats) == 0 {
-		return "📊 No rate limiting configured for this group yet.\nAdmin can use /setwindow to configure windows.", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_mystatus_no_config", nil)}
+	}
+
+	// Get group name for display
+	bot := h.client.GetBot()
+	chat, err := bot.GetChat(tgbotapi.ChatInfoConfig{
+		ChatConfig: tgbotapi.ChatConfig{ChatID: targetGroupID},
+	})
+	groupName := fmt.Sprintf("Group %d", targetGroupID)
+	if err == nil && chat.Title != "" {
+		groupName = chat.Title
 	}
 
 	var response strings.Builder
-	response.WriteString("📊 **Your Rate Limit Status**\n\n")
+	response.WriteString(localize(cmdCtx, "cmd_mystatus_title", map[string]interface{}{
+		"group": groupName,
+	}))
 
 	for _, stat := range stats {
 		windowName := strings.ToUpper(stat.SlotID)
-		status := "🔴 Disabled"
-		if stat.Enabled {
-			status = "🟢 Enabled"
+
+		if !stat.Enabled {
+			response.WriteString(localize(cmdCtx, "cmd_mystatus_window_disabled", map[string]interface{}{
+				"slot": windowName,
+			}))
+			continue
 		}
 
 		usagePercent := 0
@@ -400,77 +418,93 @@ func (h *CommandHandler) HandleMyStatus(ctx context.Context, chatID, userID int6
 			usagePercent = (stat.CurrentUsage * 100) / stat.CharLimit
 		}
 
-		durationStr := FormatWindowDuration(stat.DurationValue, stat.DurationUnit)
-
-		response.WriteString(fmt.Sprintf("**Window %s** %s\n", windowName, status))
-		response.WriteString(fmt.Sprintf("├ Limit: %d chars in %s\n", stat.CharLimit, durationStr))
-		response.WriteString(fmt.Sprintf("├ Usage: %d / %d chars (%d%%)\n", stat.CurrentUsage, stat.CharLimit, usagePercent))
-
-		if stat.Enabled {
-			if stat.CurrentUsage >= stat.CharLimit {
-				response.WriteString("└ ⚠️ **LIMIT EXCEEDED** - Your messages will be deleted\n")
-			} else if usagePercent >= 90 {
-				response.WriteString("└ ⚠️ Warning: 90%+ usage\n")
-			} else if usagePercent >= 80 {
-				response.WriteString("└ ⚠️ Warning: 80%+ usage\n")
-			} else {
-				response.WriteString("└ ✅ Within limit\n")
-			}
-		} else {
-			response.WriteString("└ Not enforced\n")
+		data := map[string]interface{}{
+			"slot":       windowName,
+			"current":    stat.CurrentUsage,
+			"limit":      stat.CharLimit,
+			"percentage": usagePercent,
 		}
-		response.WriteString("\n")
-	}
 
-	response.WriteString("💡 Old messages automatically age out after the window duration.")
+		if stat.CurrentUsage >= stat.CharLimit {
+			response.WriteString(localize(cmdCtx, "cmd_mystatus_window_exceeded", data))
+		} else if usagePercent >= 80 {
+			response.WriteString(localize(cmdCtx, "cmd_mystatus_window_warning", data))
+		} else {
+			response.WriteString(localize(cmdCtx, "cmd_mystatus_window_ok", data))
+		}
+	}
 
 	return response.String(), nil
 }
 
 // HandleCheckUser handles /checkuser command (admin only)
-func (h *CommandHandler) HandleCheckUser(ctx context.Context, chatID, adminID int64, args []string) (string, error) {
-	// Check admin permission
-	isAdmin, err := h.client.IsAdmin(ctx, chatID, adminID)
+func (h *CommandHandler) HandleCheckUser(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Note: args already has group identifier removed by handler.go
+	// In private chat: /checkuser @groupname @username → args = ["@username"]
+	// In group chat: /checkuser @username → args = ["@username"]
+
+	// Check admin permission on TARGET group
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check permissions: %w", err)
 	}
 
 	if !isAdmin {
-		return "❌ You must be an admin to check other users.", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_error_not_admin", map[string]interface{}{
+			"action": "check other users",
+		})}
 	}
 
 	// Validate arguments
 	if len(args) < 1 {
-		return "❌ Usage: /checkuser <user_id|@username>", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_checkuser_usage_group", nil)}
 	}
 
 	// Parse target user ID or @username
-	targetUserID, err := h.ParseUserIdentifier(ctx, chatID, args[0])
+	targetUserID, err := h.ParseUserIdentifier(ctx, targetGroupID, args[0])
 	if err != nil {
-		return fmt.Sprintf("❌ %v", err), nil
+		return "", &ValidationError{fmt.Sprintf("❌ %v", err)}
 	}
 
-	// Get user's window stats
-	stats, err := h.store.GetUserWindowStats(ctx, targetUserID, chatID)
+	// Get user's window stats from TARGET group
+	stats, err := h.store.GetUserWindowStats(ctx, targetUserID, targetGroupID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get window stats: %w", err)
 	}
 
 	if len(stats) == 0 {
-		return "📊 No rate limiting configured for this group yet.", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_checkuser_no_config", nil)}
 	}
 
 	// Format user display with username if available
 	userDisplay := h.formatUserDisplay(ctx, targetUserID)
 
+	// Get group name for display
+	bot := h.client.GetBot()
+	chat, err := bot.GetChat(tgbotapi.ChatInfoConfig{
+		ChatConfig: tgbotapi.ChatConfig{ChatID: targetGroupID},
+	})
+	groupName := fmt.Sprintf("Group %d", targetGroupID)
+	if err == nil && chat.Title != "" {
+		groupName = chat.Title
+	}
+
 	var response strings.Builder
-	response.WriteString(fmt.Sprintf("📊 **User %s Rate Limit Status**\n\n", userDisplay))
+	response.WriteString(localize(cmdCtx, "cmd_checkuser_title", map[string]interface{}{
+		"user":  userDisplay,
+		"group": groupName,
+	}))
 
 	for _, stat := range stats {
 		windowName := strings.ToUpper(stat.SlotID)
-		status := "🔴 Disabled"
-		if stat.Enabled {
-			status = "🟢 Enabled"
+
+		if !stat.Enabled {
+			response.WriteString(localize(cmdCtx, "cmd_checkuser_window_disabled", map[string]interface{}{
+				"slot": windowName,
+			}))
+			continue
 		}
 
 		usagePercent := 0
@@ -478,81 +512,79 @@ func (h *CommandHandler) HandleCheckUser(ctx context.Context, chatID, adminID in
 			usagePercent = (stat.CurrentUsage * 100) / stat.CharLimit
 		}
 
-		durationStr := FormatWindowDuration(stat.DurationValue, stat.DurationUnit)
-
-		response.WriteString(fmt.Sprintf("**Window %s** %s\n", windowName, status))
-		response.WriteString(fmt.Sprintf("├ Limit: %d chars in %s\n", stat.CharLimit, durationStr))
-		response.WriteString(fmt.Sprintf("├ Usage: %d / %d chars (%d%%)\n", stat.CurrentUsage, stat.CharLimit, usagePercent))
-
-		if stat.Enabled {
-			if stat.CurrentUsage >= stat.CharLimit {
-				response.WriteString("└ ⚠️ **LIMIT EXCEEDED**\n")
-			} else if usagePercent >= 90 {
-				response.WriteString("└ ⚠️ Warning: 90%+ usage\n")
-			} else if usagePercent >= 80 {
-				response.WriteString("└ ⚠️ Warning: 80%+ usage\n")
-			} else {
-				response.WriteString("└ ✅ Within limit\n")
-			}
-		} else {
-			response.WriteString("└ Not enforced\n")
+		data := map[string]interface{}{
+			"slot":       windowName,
+			"current":    stat.CurrentUsage,
+			"limit":      stat.CharLimit,
+			"percentage": usagePercent,
 		}
-		response.WriteString("\n")
+
+		if stat.CurrentUsage >= stat.CharLimit {
+			response.WriteString(localize(cmdCtx, "cmd_checkuser_window_exceeded", data))
+		} else if usagePercent >= 80 {
+			response.WriteString(localize(cmdCtx, "cmd_checkuser_window_warning", data))
+		} else {
+			response.WriteString(localize(cmdCtx, "cmd_checkuser_window_ok", data))
+		}
 	}
 
 	return response.String(), nil
 }
 
 // HandleListOverrides lists all users with manual overrides in the group
-func (h *CommandHandler) HandleListOverrides(ctx context.Context, chatID, adminID int64) (string, error) {
-	// Check admin permission
-	isAdmin, err := h.client.IsAdmin(ctx, chatID, adminID)
+func (h *CommandHandler) HandleListOverrides(ctx context.Context, cmdCtx CommandContext) (string, error) {
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Note: No args to strip - this command takes no arguments
+	// In private chat: /overrides @groupname
+	// In group chat: /overrides
+
+	// Check admin permission on TARGET group
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check permissions: %w", err)
 	}
 
 	if !isAdmin {
-		return "❌ You must be an admin to view overrides.", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_error_not_admin", map[string]interface{}{
+			"action": "view overrides",
+		})}
 	}
 
-	// Get all overrides for this chat
-	overrides, err := h.store.GetAllOverrides(ctx, chatID)
+	// Get all overrides for TARGET group
+	overrides, err := h.store.GetAllOverrides(ctx, targetGroupID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get overrides: %w", err)
 	}
 
 	if len(overrides) == 0 {
-		return "📋 **Manual Overrides**\n\nNo manual overrides set for this group.\n\n💡 Use /override <user_id|@username> <whitelist|blacklist|clear> to manage overrides.", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_showoverrides_no_overrides", nil)}
+	}
+
+	// Get group name for display
+	bot := h.client.GetBot()
+	chat, err := bot.GetChat(tgbotapi.ChatInfoConfig{
+		ChatConfig: tgbotapi.ChatConfig{ChatID: targetGroupID},
+	})
+	groupName := fmt.Sprintf("Group %d", targetGroupID)
+	if err == nil && chat.Title != "" {
+		groupName = chat.Title
 	}
 
 	var response strings.Builder
-	response.WriteString(fmt.Sprintf("📋 **Manual Overrides** (%d users)\n\n", len(overrides)))
+	response.WriteString(localize(cmdCtx, "cmd_showoverrides_title", map[string]interface{}{
+		"group": groupName,
+	}))
 
 	for _, override := range overrides {
 		// Get user display with username
 		userDisplay := h.formatUserDisplay(ctx, override.UserID)
 
-		// Format override state
-		var stateIcon, stateText string
-		if override.OverrideState == nil {
-			stateIcon = "➖"
-			stateText = "Normal (cleared)"
-		} else if *override.OverrideState {
-			stateIcon = "✅"
-			stateText = "Whitelisted"
-		} else {
-			stateIcon = "❌"
-			stateText = "Blacklisted"
-		}
+		// Format creation time
+		createdTime := override.CreatedAt.Format("2006-01-02 15:04")
 
-		response.WriteString(fmt.Sprintf("%s **%s** - %s\n", stateIcon, userDisplay, stateText))
-
-		// Show reason if present
-		if override.Reason != nil && *override.Reason != "" {
-			response.WriteString(fmt.Sprintf("  └ Reason: %s\n", *override.Reason))
-		}
-
-		// Show expiration if present
+		// Format expiration
+		var expiresText string
 		if override.ExpiresAt != nil {
 			expiresAt := *override.ExpiresAt
 			now := time.Now()
@@ -560,192 +592,345 @@ func (h *CommandHandler) HandleListOverrides(ctx context.Context, chatID, adminI
 				duration := expiresAt.Sub(now)
 				hours := int(duration.Hours())
 				if hours < 24 {
-					response.WriteString(fmt.Sprintf("  └ Expires in: %d hours\n", hours))
+					expiresText = fmt.Sprintf("\n  • Expires: in %d hours", hours)
 				} else {
 					days := hours / 24
-					response.WriteString(fmt.Sprintf("  └ Expires in: %d days\n", days))
+					expiresText = fmt.Sprintf("\n  • Expires: in %d days", days)
 				}
 			} else {
-				response.WriteString("  └ ⚠️ Expired (will be cleaned up)\n")
+				expiresText = "\n  • ⚠️ Expired (will be cleaned up)"
 			}
 		} else {
-			response.WriteString("  └ Permanent (no expiration)\n")
+			expiresText = "\n  • Permanent (no expiration)"
 		}
 
-		response.WriteString("\n")
-	}
+		// Show whitelist or blacklist entry
+		data := map[string]interface{}{
+			"user":    userDisplay,
+			"created": createdTime,
+			"expires": expiresText,
+		}
 
-	response.WriteString("💡 Use /checkuser <user_id|@username> to see detailed stats\n")
-	response.WriteString("💡 Use /override <user_id|@username> clear to remove an override")
+		if override.OverrideState != nil && *override.OverrideState {
+			response.WriteString(localize(cmdCtx, "cmd_showoverrides_whitelist_entry", data))
+		} else if override.OverrideState != nil && !*override.OverrideState {
+			response.WriteString(localize(cmdCtx, "cmd_showoverrides_blacklist_entry", data))
+		}
+	}
 
 	return response.String(), nil
 }
 
 // HandleSetWindow handles /setwindow command
-func (h *CommandHandler) HandleSetWindow(ctx context.Context, chatID, userID int64, args []string) (string, error) {
-	// Check admin permission
-	isAdmin, err := h.client.IsAdmin(ctx, chatID, userID)
+func (h *CommandHandler) HandleSetWindow(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	// Feature 008 US4: cmdCtx.TargetGroup already resolved in handler.go
+	// - For group chat: TargetGroup = chatID
+	// - For private chat: TargetGroup = resolved from first arg (@username or -ID)
+	// - args: group identifier already removed by handler.go for private chat
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Check admin permission on TARGET group
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check permissions: %w", err)
 	}
 
 	if !isAdmin {
-		return "❌ You must be an admin to configure windows.", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_error_not_admin", map[string]interface{}{
+			"action": "configure rate limit windows",
+		})}
 	}
 
-	// Validate arguments
+	// Validate arguments (Feature 009 US4: Use user language for command responses)
 	if len(args) < 3 {
-		return "❌ Usage: /setwindow <a|b|c> <limit> <duration>\nExample: /setwindow a 1000 30m", nil
+		if cmdCtx.ChatType == "private" {
+			return "", &ValidationError{localize(cmdCtx, "cmd_setwindow_usage_private", nil)}
+		}
+		return "", &ValidationError{localize(cmdCtx, "cmd_setwindow_usage_group", nil)}
 	}
 
 	slotID := strings.ToLower(args[0])
 	if slotID != "a" && slotID != "b" && slotID != "c" {
-		return "❌ Window must be a, b, or c", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_setwindow_invalid_slot", map[string]interface{}{
+			"slot": slotID,
+		})}
 	}
 
 	charLimit, err := strconv.Atoi(args[1])
 	if err != nil || charLimit <= 0 {
-		return "❌ Character limit must be a positive number", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_setwindow_invalid_limit", map[string]interface{}{
+			"error": "must be a positive integer",
+		})}
 	}
 
 	durationValue, durationUnit, err := ParseDurationString(args[2])
 	if err != nil {
-		return fmt.Sprintf("❌ Invalid duration: %v", err), nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_setwindow_invalid_duration", map[string]interface{}{
+			"error": err.Error(),
+		})}
 	}
 
 	// Calculate window duration in seconds
 	windowDuration, err := ratelimit.CalculateWindowDuration(durationValue, durationUnit)
 	if err != nil {
-		return fmt.Sprintf("❌ Failed to calculate duration: %v", err), nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_setwindow_invalid_duration", map[string]interface{}{
+			"error": err.Error(),
+		})}
 	}
 
-	// Ensure group and default windows exist
-	if err := h.store.CreateDefaultWindows(ctx, chatID); err != nil {
+	// Ensure group and default windows exist (for TARGET group)
+	if err := h.store.CreateDefaultWindows(ctx, targetGroupID); err != nil {
 		return "", fmt.Errorf("failed to initialize windows: %w", err)
 	}
 
-	// Update window slot configuration
-	err = h.store.UpdateWindowSlot(ctx, chatID, slotID, charLimit, durationValue, durationUnit, windowDuration, true)
+	// Update window slot configuration (for TARGET group)
+	err = h.store.UpdateWindowSlot(ctx, targetGroupID, slotID, charLimit, durationValue, durationUnit, windowDuration, true)
 	if err != nil {
 		return "", fmt.Errorf("failed to update window: %w", err)
 	}
 
 	// Reset all users' messages in this chat (affects all windows - shared message log)
 	// Note: With single message log design, this clears ALL window history
-	if err := h.store.ResetWindowMessagesForAll(ctx, chatID); err != nil {
+	if err := h.store.ResetWindowMessagesForAll(ctx, targetGroupID); err != nil {
 		return "", fmt.Errorf("failed to reset window messages: %w", err)
 	}
 
+	// Format duration string for display
 	durationStr := FormatWindowDuration(durationValue, durationUnit)
-	return fmt.Sprintf("✅ Window %s configured:\n• Limit: %d characters\n• Duration: %s\n• Status: Enabled\n\nAll users' messages for this window have been reset.",
-		strings.ToUpper(slotID), charLimit, durationStr), nil
+	status := "enabled"
+
+	return localize(cmdCtx, "cmd_setwindow_success", map[string]interface{}{
+		"window":   strings.ToUpper(slotID),
+		"limit":    charLimit,
+		"duration": durationStr,
+		"status":   status,
+	}), nil
 }
 
 // HandleDisableWindow handles /disablewindow command
-func (h *CommandHandler) HandleDisableWindow(ctx context.Context, chatID, userID int64, args []string) (string, error) {
-	// Check admin permission
-	isAdmin, err := h.client.IsAdmin(ctx, chatID, userID)
+func (h *CommandHandler) HandleDisableWindow(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	// Feature 008 US4: cmdCtx.TargetGroup already resolved in handler.go
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Check admin permission on TARGET group
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check permissions: %w", err)
 	}
 
 	if !isAdmin {
-		return "❌ You must be an admin to manage windows.", nil
+		return "", &ValidationError{localize(cmdCtx, "permission_denied_admin_only", nil)}
 	}
 
-	// Validate arguments
+	// Validate arguments (group identifier already removed by handler.go)
 	if len(args) < 1 {
-		return "❌ Usage: /disablewindow <a|b|c>", nil
+		return "", &ValidationError{localize(cmdCtx, "disablewindow_usage", nil)}
 	}
 
 	slotID := strings.ToLower(args[0])
 	if slotID != "a" && slotID != "b" && slotID != "c" {
-		return "❌ Window must be a, b, or c", nil
+		return "", &ValidationError{localize(cmdCtx, "invalid_window_slot", nil)}
 	}
 
-	// Disable window
-	err = h.store.SetWindowEnabled(ctx, chatID, slotID, false)
+	// Disable window (for TARGET group)
+	err = h.store.SetWindowEnabled(ctx, targetGroupID, slotID, false)
 	if err != nil {
 		return "", fmt.Errorf("failed to disable window: %w", err)
 	}
 
-	return fmt.Sprintf("✅ Window %s disabled. It will no longer enforce rate limits.", strings.ToUpper(slotID)), nil
+	return localize(cmdCtx, "window_disabled_success", map[string]interface{}{
+		"window": strings.ToUpper(slotID),
+	}), nil
 }
 
 // HandleEnableWindow handles /enablewindow command
-func (h *CommandHandler) HandleEnableWindow(ctx context.Context, chatID, userID int64, args []string) (string, error) {
-	// Check admin permission
-	isAdmin, err := h.client.IsAdmin(ctx, chatID, userID)
+func (h *CommandHandler) HandleEnableWindow(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	// Feature 008 US4: cmdCtx.TargetGroup already resolved in handler.go
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Check admin permission on TARGET group
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check permissions: %w", err)
 	}
 
 	if !isAdmin {
-		return "❌ You must be an admin to manage windows.", nil
+		return "", &ValidationError{localize(cmdCtx, "permission_denied_admin_only", nil)}
 	}
 
-	// Validate arguments
+	// Validate arguments (group identifier already removed by handler.go)
 	if len(args) < 1 {
-		return "❌ Usage: /enablewindow <a|b|c>", nil
+		return "", &ValidationError{localize(cmdCtx, "enablewindow_usage", nil)}
 	}
 
 	slotID := strings.ToLower(args[0])
 	if slotID != "a" && slotID != "b" && slotID != "c" {
-		return "❌ Window must be a, b, or c", nil
+		return "", &ValidationError{localize(cmdCtx, "invalid_window_slot", nil)}
 	}
 
-	// Enable window
-	err = h.store.SetWindowEnabled(ctx, chatID, slotID, true)
+	// Enable window (for TARGET group)
+	err = h.store.SetWindowEnabled(ctx, targetGroupID, slotID, true)
 	if err != nil {
 		return "", fmt.Errorf("failed to enable window: %w", err)
 	}
 
-	return fmt.Sprintf("✅ Window %s enabled. Rate limits will now be enforced.", strings.ToUpper(slotID)), nil
+	return localize(cmdCtx, "window_enabled_success", map[string]interface{}{
+		"window": strings.ToUpper(slotID),
+	}), nil
 }
 
-// HandleShowWindows handles /showwindows command
-func (h *CommandHandler) HandleShowWindows(ctx context.Context, chatID, userID int64, args []string) (string, error) {
-	// Check admin permission
-	isAdmin, err := h.client.IsAdmin(ctx, chatID, userID)
+// HandleConfig handles /config command
+func (h *CommandHandler) HandleConfig(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Note: No args to strip - this command takes no arguments
+	// In private chat: /config @groupname
+	// In group chat: /config
+
+	// Check admin permission on TARGET group
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check permissions: %w", err)
 	}
 
 	if !isAdmin {
-		return "❌ You must be an admin to view window configurations.", nil
+		return "", &ValidationError{localize(cmdCtx, "permission_denied_admin_only", nil)}
 	}
 
-	// Get all windows
-	windows, err := h.store.GetAllWindows(ctx, chatID)
+	// Get all windows for TARGET group
+	windows, err := h.store.GetAllWindows(ctx, targetGroupID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get windows: %w", err)
 	}
 
 	if len(windows) == 0 {
-		return "📊 No windows configured yet.\nUse /setwindow to configure rate limiting.", nil
+		return "", &ValidationError{localize(cmdCtx, "window_show_none", nil)}
 	}
 
+	// Get group's language for displaying group configuration metadata
+	groupLang := "en"
+	if lang, err := h.store.GetGroupLanguage(ctx, targetGroupID); err == nil {
+		groupLang = lang
+	}
+
+	// Build response with localized header (use USER language for command response)
+	// But include group's language setting as informational metadata
+	userLocalizer := i18nPkg.GetLocalizer(cmdCtx.UserLanguage)
+	languageName := i18nPkg.GetLanguageName(userLocalizer, groupLang)
+	header := i18nPkg.Localize(userLocalizer, "window_show_header", map[string]interface{}{
+		"language": languageName,
+	})
+
 	var response strings.Builder
-	response.WriteString("📊 **Multi-Window Rate Limit Configuration**\n\n")
+	response.WriteString(header)
 
 	for _, window := range windows {
 		windowName := strings.ToUpper(window.SlotID)
-		status := "🔴 Disabled"
+
+		// Localized status (use USER language for command response)
+		var statusKey string
 		if window.Enabled {
-			status = "🟢 Enabled"
+			statusKey = "window_status_enabled"
+		} else {
+			statusKey = "window_status_disabled"
 		}
+		status := i18nPkg.LocalizeSimple(userLocalizer, statusKey)
 
-		durationStr := FormatWindowDuration(window.DurationValue, window.DurationUnit)
+		// Format duration with localization (use USER language)
+		durationStr := i18nPkg.FormatDuration(userLocalizer, window.DurationValue, window.DurationUnit)
 
-		response.WriteString(fmt.Sprintf("**Window %s** %s\n", windowName, status))
-		response.WriteString(fmt.Sprintf("├ Limit: %d characters\n", window.CharLimit))
-		response.WriteString(fmt.Sprintf("└ Duration: %s\n\n", durationStr))
+		// Build localized entry (use USER language)
+		entry := i18nPkg.Localize(userLocalizer, "window_show_entry", map[string]interface{}{
+			"window":   windowName,
+			"limit":    window.CharLimit,
+			"duration": durationStr,
+			"status":   status,
+		})
+		response.WriteString(entry)
+		response.WriteString("\n")
 	}
 
-	response.WriteString("💡 Use /setwindow <a|b|c> <limit> <duration> to modify\n")
-	response.WriteString("💡 Use /enablewindow or /disablewindow to toggle enforcement")
-
 	return response.String(), nil
+}
+
+// ============================================================================
+// Language Configuration Command (Feature 007)
+// ============================================================================
+
+// HandleSetLanguage handles /setlanguage command - sets the language preference
+// Feature 009 DUAL MODE:
+// - Without group identifier: /setlanguage en → sets USER language (private chat preference)
+// - With group identifier: /setlanguage @home en → sets GROUP language (group notifications)
+// cmdCtx.TargetGroup == 0 means no group identifier was provided
+func (h *CommandHandler) HandleSetLanguage(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	// Feature 009: cmdCtx.TargetGroup already resolved in handler.go
+	// - 0 = no group identifier (set user language)
+	// - non-zero = group identifier provided (set group language)
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Validate arguments (group identifier already removed by handler.go)
+	if len(args) < 1 {
+		return "", &ValidationError{localize(cmdCtx, "cmd_setlanguage_usage", nil)}
+	}
+
+	languageInput := strings.Join(args, " ")
+	languageInput = strings.TrimSpace(languageInput)
+
+	// Validate and normalize language
+	normalizedLang, valid := i18nPkg.ValidateLanguage(languageInput)
+	if !valid {
+		return "", &ValidationError{localize(cmdCtx, "cmd_error_invalid_language", nil)}
+	}
+
+	// DUAL MODE IMPLEMENTATION
+	if targetGroupID == 0 {
+		// Mode 1: No group identifier → set USER language
+		if err := h.store.SetUserLanguage(ctx, cmdCtx.UserID, normalizedLang); err != nil {
+			return "", &ValidationError{localize(cmdCtx, "cmd_setlanguage_error_db", nil)}
+		}
+
+		// Return confirmation in NEW language
+		newLocalizer := i18nPkg.GetLocalizer(normalizedLang)
+		return i18nPkg.LocalizeSimple(newLocalizer, "language_changed"), nil
+	}
+
+	// Mode 2: Group identifier provided → set GROUP language (requires admin)
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
+	if err != nil {
+		return "", fmt.Errorf("failed to check permissions: %w", err)
+	}
+
+	if !isAdmin {
+		return "", &ValidationError{localize(cmdCtx, "permission_denied", nil)}
+	}
+
+	// Ensure group record exists
+	if err := h.store.EnsureGroup(ctx, targetGroupID); err != nil {
+		return "", fmt.Errorf("failed to ensure group record: %w", err)
+	}
+
+	// Update language preference for GROUP
+	if err := h.store.SetGroupLanguage(ctx, targetGroupID, normalizedLang); err != nil {
+		return "", &ValidationError{localize(cmdCtx, "cmd_setlanguage_error_db", nil)}
+	}
+
+	// Return confirmation in NEW language
+	newLocalizer := i18nPkg.GetLocalizer(normalizedLang)
+	return i18nPkg.LocalizeSimple(newLocalizer, "language_changed"), nil
+}
+
+// validateLanguageInput validates and normalizes language input
+// DEPRECATED: Use i18nPkg.ValidateLanguage instead
+func validateLanguageInput(input string) (string, bool) {
+	return i18nPkg.ValidateLanguage(input)
+}
+
+// getLanguageName returns the display name for a language code
+// DEPRECATED: Use i18nPkg.GetLanguageName instead
+func getLanguageName(code string) string {
+	// Get English localizer for language names
+	localizer := i18nPkg.GetLocalizer("en")
+	return i18nPkg.GetLanguageName(localizer, code)
 }
 
 // ============================================================================
@@ -753,15 +938,21 @@ func (h *CommandHandler) HandleShowWindows(ctx context.Context, chatID, userID i
 // ============================================================================
 
 // HandlePause handles /pause command - pauses ALL rate limiting for the group
-func (h *CommandHandler) HandlePause(ctx context.Context, chatID, adminID int64, args []string) (string, error) {
-	// Check admin permission
-	isAdmin, err := h.client.IsAdmin(ctx, chatID, adminID)
+func (h *CommandHandler) HandlePause(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Note: args already has group identifier removed by handler.go
+	// In private chat: /pause @groupname 30m → args = ["30m"]
+	// In group chat: /pause 30m → args = ["30m"]
+
+	// Check admin permission on TARGET group
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check permissions: %w", err)
 	}
 
 	if !isAdmin {
-		return "❌ You must be an admin to pause rate limiting.", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_pause_error_not_admin", nil)}
 	}
 
 	// Parse optional duration argument
@@ -769,7 +960,9 @@ func (h *CommandHandler) HandlePause(ctx context.Context, chatID, adminID int64,
 	if len(args) > 0 {
 		durationValue, durationUnit, err := ParseDurationString(args[0])
 		if err != nil {
-			return fmt.Sprintf("❌ Invalid duration: %v\nUsage: /pause [duration]\nExample: /pause 1h", err), nil
+			return "", &ValidationError{localize(cmdCtx, "cmd_pause_invalid_duration", map[string]interface{}{
+				"error": err.Error(),
+			})}
 		}
 
 		// Calculate resume time
@@ -787,43 +980,54 @@ func (h *CommandHandler) HandlePause(ctx context.Context, chatID, adminID int64,
 		resumeAt = &resumeTime
 	}
 
-	// Pause the group
-	if err := h.store.SetGroupPaused(ctx, chatID, true, resumeAt); err != nil {
+	// Pause the group (use targetGroupID, not cmdCtx.ChatID which is private chat in Feature 009)
+	if err := h.store.SetGroupPaused(ctx, targetGroupID, true, resumeAt); err != nil {
 		return "", fmt.Errorf("failed to pause group: %w", err)
 	}
 
 	if resumeAt != nil {
-		return fmt.Sprintf("✅ Rate limiting paused until %s\nAll users can send unlimited messages during this period.", resumeAt.Format("2006-01-02 15:04:05")), nil
+		// Calculate duration string for display
+		durationStr := args[0] // Use the original duration string (e.g., "30m", "1h", "7d")
+		return localize(cmdCtx, "cmd_pause_success_temporary", map[string]interface{}{
+			"duration": durationStr,
+			"until":    resumeAt.Format("2006-01-02 15:04:05"),
+		}), nil
 	}
-	return "✅ Rate limiting paused indefinitely.\nAll users can send unlimited messages until you use /resume.", nil
+	return localize(cmdCtx, "cmd_pause_success_indefinite", nil), nil
 }
 
 // HandleResume handles /resume command - resumes rate limiting for the group
-func (h *CommandHandler) HandleResume(ctx context.Context, chatID, adminID int64) (string, error) {
-	// Check admin permission
-	isAdmin, err := h.client.IsAdmin(ctx, chatID, adminID)
+func (h *CommandHandler) HandleResume(ctx context.Context, cmdCtx CommandContext) (string, error) {
+	targetGroupID := cmdCtx.TargetGroup
+
+	// Note: No args to strip - this command takes no arguments
+	// In private chat: /resume @groupname
+	// In group chat: /resume
+
+	// Check admin permission on TARGET group
+	isAdmin, err := h.client.IsAdmin(ctx, targetGroupID, cmdCtx.UserID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check permissions: %w", err)
 	}
 
 	if !isAdmin {
-		return "❌ You must be an admin to resume rate limiting.", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_resume_error_not_admin", nil)}
 	}
 
 	// Check if group is paused
-	isPaused, err := h.store.IsGroupPaused(ctx, chatID)
+	isPaused, err := h.store.IsGroupPaused(ctx, targetGroupID)
 	if err != nil {
 		return "", fmt.Errorf("failed to check pause status: %w", err)
 	}
 
 	if !isPaused {
-		return "ℹ️ Rate limiting is not paused for this group.", nil
+		return "", &ValidationError{localize(cmdCtx, "cmd_resume_not_paused", nil)}
 	}
 
 	// Resume the group
-	if err := h.store.SetGroupPaused(ctx, chatID, false, nil); err != nil {
+	if err := h.store.SetGroupPaused(ctx, targetGroupID, false, nil); err != nil {
 		return "", fmt.Errorf("failed to resume group: %w", err)
 	}
 
-	return "✅ Rate limiting resumed.\nAll enabled windows are now enforcing limits again.", nil
+	return localize(cmdCtx, "cmd_resume_success", nil), nil
 }
