@@ -533,10 +533,50 @@
   },
   "cmd_help_user": {
     "description": "User help text (shown to everyone)",
-    "other": "🤖 Throttle Bot - Multi-Window Rate Limiter\n\n👤 **Your Commands:**\n• /help - Show this help message\n• /help admin - Show admin commands\n• /mystatus @groupname - Check your current usage\n  Example: /mystatus @home\n• /config @groupname - Show rate limiting configuration\n  Example: /config @home\n• /setlanguage <language> - Set your preferred language\n  Example: /setlanguage english\n\n💡 **How It Works:**\nEach group has up to 3 rate limiting windows (A, B, C) with different:\n- Character limits (e.g., 1000, 5000, 10000 chars)\n- Time windows (e.g., 30 minutes, 2 hours, 7 days)\n\nYour messages count toward all active windows. If you exceed ANY window's limit, your messages will be automatically deleted until the window resets.\n\n🎯 **Override States:**\n- **Normal**: Rate limiting applies (default)\n- **Whitelisted**: Your messages always allowed ✅\n- **Blacklisted**: Your messages always blocked ❌\n\n💬 Contact an admin if you need help!"
+    "other": "🤖 Throttle Bot - Multi-Window Rate Limiter\n\n👤 **Your Commands:**\n• /help - Show this help message\n• /help admin - Show admin commands\n• /mystatus @groupname - Check your current usage\n  Example: /mystatus @home\n• /mygroups - List groups where you and the bot are members\n• /setlanguage <language> - Set your preferred language\n  Example: /setlanguage english\n\n💡 **How It Works:**\nEach group has up to 3 rate limiting windows (A, B, C) with different:\n- Character limits (e.g., 1000, 5000, 10000 chars)\n- Time windows (e.g., 30 minutes, 2 hours, 7 days)\n\nYour messages count toward all active windows. If you exceed ANY window's limit, your messages will be automatically deleted until the window resets.\n\n🎯 **Override States:**\n- **Normal**: Rate limiting applies (default)\n- **Whitelisted**: Your messages always allowed ✅\n- **Blacklisted**: Your messages always blocked ❌\n\n💬 Contact an admin if you need help!"
   },
   "cmd_help_admin": {
     "description": "Admin help text (additional commands for admins)",
-    "other": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👑 **ADMIN COMMANDS**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📝 **Window Configuration:**\n• /setwindow @groupname <a|b|c> <limit> <duration>\n  Example: /setwindow @home a 1000 30m\n• /enablewindow @groupname <a|b|c>\n  Example: /enablewindow @home a\n• /disablewindow @groupname <a|b|c>\n  Example: /disablewindow @home a\n\n🔧 **User Management:**\n• /checkuser @groupname <user_id|@username>\n  Example: /checkuser @home 123456789\n• /overrides @groupname - List all overrides\n  Example: /overrides @home\n• /override @groupname <user_id|@username> <mode> [duration]\n  **Modes**: whitelist | blacklist | clear\n  **Examples**:\n    /override @home 123456789 whitelist\n    /override @home @testuser whitelist 7d\n    /override @home 123456789 blacklist 2h\n    /override @home @testuser clear\n\n⏸️ **Group Controls:**\n• /pause @groupname [duration]\n  Example: /pause @home 30m\n• /resume @groupname\n  Example: /resume @home\n\n🌐 **Language:**\n• /setlanguage <language> - Set YOUR language\n  Example: /setlanguage english\n• /setlanguage @groupname <language> - Set GROUP language\n  Example: /setlanguage @home russian\n\n📊 **Information:**\n• /config @groupname - Show configuration\n• /mystatus @groupname - Check your usage\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    "other": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n👑 **ADMIN COMMANDS**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📝 **Window Configuration:**\n• /setwindow @groupname <a|b|c> <limit> <duration>\n  Example: /setwindow @home a 1000 30m\n• /enablewindow @groupname <a|b|c>\n  Example: /enablewindow @home a\n• /disablewindow @groupname <a|b|c>\n  Example: /disablewindow @home a\n\n🔧 **User Management:**\n• /checkuser @groupname <user_id|@username>\n  Example: /checkuser @home 123456789\n• /overrides @groupname - List all overrides\n  Example: /overrides @home\n• /override @groupname <user_id|@username> <mode> [duration]\n  **Modes**: whitelist | blacklist | clear\n  **Examples**:\n    /override @home 123456789 whitelist\n    /override @home @testuser whitelist 7d\n    /override @home 123456789 blacklist 2h\n    /override @home @testuser clear\n\n⏸️ **Group Controls:**\n• /pause @groupname [duration]\n  Example: /pause @home 30m\n• /resume @groupname\n  Example: /resume @home\n\n🌐 **Language:**\n• /setlanguage <language> - Set YOUR language\n  Example: /setlanguage english\n• /setlanguage @groupname <language> - Set GROUP language\n  Example: /setlanguage @home russian\n\n📊 **Information:**\n• /config @groupname - Show configuration\n• /mystatus @groupname - Check your usage\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  },
+  "cmd_mygroups_help": {
+    "description": "Help text for /mygroups command",
+    "other": "View list of groups where you and the bot are both members"
+  },
+  "cmd_mygroups_header": {
+    "description": "Header for group list (single page)",
+    "other": "📋 Your Groups"
+  },
+  "cmd_mygroups_header_paginated": {
+    "description": "Header for group list with pagination info",
+    "other": "📋 Your Groups (Page {{.current}} of {{.total}})"
+  },
+  "cmd_mygroups_role_admin": {
+    "description": "Role label for admin users",
+    "other": "admin"
+  },
+  "cmd_mygroups_role_user": {
+    "description": "Role label for regular users",
+    "other": "user"
+  },
+  "cmd_mygroups_empty": {
+    "description": "Message when user has no shared groups with bot",
+    "other": "You are not a member of any groups where this bot is present."
+  },
+  "cmd_mygroups_next_page": {
+    "description": "Navigation instruction for next page",
+    "other": "\n\nUse /mygroups {{.page}} to see next page"
+  },
+  "cmd_mygroups_unnamed_group": {
+    "description": "Fallback text for groups with NULL title",
+    "other": "Unnamed Group (ID: {{.chatID}})"
+  },
+  "cmd_mygroups_invalid_page": {
+    "description": "Error message for invalid page number",
+    "other": "Invalid page number. Use /mygroups [1-{{.totalPages}}]"
+  },
+  "cmd_mygroups_error": {
+    "description": "Generic error message for /mygroups command",
+    "other": "Unable to retrieve group list. Please try again."
   }
 }

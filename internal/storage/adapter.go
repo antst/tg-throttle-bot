@@ -95,6 +95,36 @@ func (s *RateLimitStorage) GetGroupByUsername(ctx context.Context, username stri
 	return row.ChatID, nil
 }
 
+// ResolveUsername resolves @username to chat_id (Feature 014: unified resolution)
+// Simpler version without context for use in validation.GroupResolver interface
+func (s *RateLimitStorage) ResolveUsername(username string) (int64, error) {
+	return s.GetGroupByUsername(context.Background(), username)
+}
+
+// ResolveTitle resolves title to chat_id(s) - may return multiple (Feature 014: unified resolution)
+func (s *RateLimitStorage) ResolveTitle(title string) ([]int64, error) {
+	rows, err := s.store.GetGroupsByTitle(context.Background(), &title)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup groups by title: %w", err)
+	}
+
+	chatIDs := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		chatIDs = append(chatIDs, row.ChatID)
+	}
+
+	return chatIDs, nil
+}
+
+// GetGroupInfo retrieves username and title for a group (Feature 014: conflict detection)
+func (s *RateLimitStorage) GetGroupInfo(chatID int64) (username, title *string, err error) {
+	row, err := s.store.GetGroupByChatID(context.Background(), chatID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("group %d not found", chatID)
+	}
+	return row.Username, row.Title, nil
+}
+
 // ============================================================================
 // Simple Messages-Based Methods (Feature 006 Refactoring)
 // ============================================================================
@@ -588,11 +618,23 @@ func (s *RateLimitStorage) SetUserLanguage(ctx context.Context, userID int64, la
 	})
 }
 
-// EnsureGroupWithUsername creates or updates a group record with username (Feature 011)
-func (s *RateLimitStorage) EnsureGroupWithUsername(ctx context.Context, chatID int64, username string) error {
-	return s.store.EnsureGroupWithUsername(ctx, sqlc.EnsureGroupWithUsernameParams{
+// EnsureGroupMetadata creates or updates a group record with username and title (Feature 014: unified upsert)
+// This replaces EnsureGroupWithUsername and EnsureGroupWithTitle to prevent data corruption
+func (s *RateLimitStorage) EnsureGroupMetadata(ctx context.Context, chatID int64, username, title string) error {
+	var usernamePtr *string
+	var titlePtr *string
+
+	if username != "" {
+		usernamePtr = &username
+	}
+	if title != "" {
+		titlePtr = &title
+	}
+
+	return s.store.EnsureGroupMetadata(ctx, sqlc.EnsureGroupMetadataParams{
 		ChatID:   chatID,
-		Username: &username,
+		Username: usernamePtr,
+		Title:    titlePtr,
 	})
 }
 
@@ -905,4 +947,48 @@ type RecordSyncEventParams struct {
 	MembersAdded     int
 	MembersUpdated   int
 	MembersRemoved   int
+}
+
+// ============================================================================
+// MyGroups Command Methods (Feature 013)
+// ============================================================================
+
+// GetUserGroupsWithRole retrieves paginated list of groups where user is an active member
+func (s *RateLimitStorage) GetUserGroupsWithRole(ctx context.Context, userID int64, limit, offset int32) ([]ratelimit.UserGroupMembership, error) {
+	rows, err := s.store.GetUserGroupsWithRole(ctx, sqlc.GetUserGroupsWithRoleParams{
+		UserID: userID,
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user groups: %w", err)
+	}
+
+	result := make([]ratelimit.UserGroupMembership, 0, len(rows))
+	for _, row := range rows {
+		membership := ratelimit.UserGroupMembership{
+			ChatID:   row.ChatID,
+			Title:    row.Title,
+			Username: row.Username, // Feature 014: include username for enhanced display
+			IsAdmin:  row.IsAdmin,
+		}
+
+		// Convert pgtype.Timestamptz to time.Time
+		if row.JoinedAt.Valid {
+			membership.JoinedAt = row.JoinedAt.Time
+		}
+
+		result = append(result, membership)
+	}
+
+	return result, nil
+}
+
+// CountUserGroups counts total active groups for a user (for pagination)
+func (s *RateLimitStorage) CountUserGroups(ctx context.Context, userID int64) (int64, error) {
+	count, err := s.store.CountUserGroups(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count user groups: %w", err)
+	}
+	return count, nil
 }

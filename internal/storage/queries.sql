@@ -100,12 +100,20 @@ SELECT chat_id, language FROM groups
 ORDER BY chat_id;
 
 -- name: GetGroupByUsername :one
--- Look up group by @username for group parameter parsing (Feature 008)
-SELECT chat_id, username, language
-FROM groups
+-- Get group by @username (case-insensitive) - Feature 014: unified resolution
+SELECT chat_id, username, title FROM groups 
 WHERE LOWER(username) = LOWER($1)
-  AND username IS NOT NULL
-  AND username != '';
+LIMIT 1;
+
+-- name: GetGroupsByTitle :many
+-- Get groups by exact title match - Feature 014: unified resolution (may return multiple)
+SELECT chat_id, username, title FROM groups
+WHERE title = $1;
+
+-- name: GetGroupByChatID :one
+-- Get group by chat_id - Feature 014: unified resolution
+SELECT chat_id, username, title FROM groups
+WHERE chat_id = $1;
 
 -- name: GetUserLanguage :one
 -- Retrieve user's language preference for private responses (Feature 008)
@@ -134,15 +142,23 @@ INSERT INTO groups (chat_id)
 VALUES ($1)
 ON CONFLICT (chat_id) DO NOTHING;
 
--- name: EnsureGroupWithUsername :exec
--- Create or update group record with username (Feature 011: proactive group records)
-INSERT INTO groups (chat_id, username)
-VALUES ($1, $2)
+-- name: EnsureGroupMetadata :exec
+-- Create or update group record with both username and title (Feature 014: unified metadata upsert)
+-- This replaces the broken EnsureGroupWithUsername and EnsureGroupWithTitle queries that caused data corruption
+INSERT INTO groups (chat_id, username, title)
+VALUES ($1, $2, $3)
 ON CONFLICT (chat_id) DO UPDATE
-SET username = CASE 
-    WHEN EXCLUDED.username IS NOT NULL THEN EXCLUDED.username 
-    ELSE groups.username 
-END;
+SET 
+    username = CASE 
+        WHEN EXCLUDED.username IS NOT NULL AND EXCLUDED.username != '' 
+        THEN EXCLUDED.username 
+        ELSE groups.username 
+    END,
+    title = CASE 
+        WHEN EXCLUDED.title IS NOT NULL AND EXCLUDED.title != '' 
+        THEN EXCLUDED.title 
+        ELSE groups.title 
+    END;
 
 -- name: EnsureUser :exec
 -- Create user record if it doesn't exist (required for foreign key constraints)
@@ -400,7 +416,7 @@ WHERE gm.status = 'active'
   AND gm.updated_at < NOW() - INTERVAL '48 hours';
 
 -- name: CreateSyncMetadata :one
--- Initialize sync metadata for a new group
+-- Initialize sync metadata for a new group (upserts to handle existing records)
 INSERT INTO sync_metadata (
     chat_id,
     sync_status,
@@ -408,7 +424,9 @@ INSERT INTO sync_metadata (
 ) VALUES (
     $1, 'pending', NOW() + INTERVAL '24 hours'
 )
-ON CONFLICT (chat_id) DO NOTHING
+ON CONFLICT (chat_id) DO UPDATE SET
+    sync_status = EXCLUDED.sync_status,
+    next_sync_at = EXCLUDED.next_sync_at
 RETURNING *;
 
 -- name: UpdateSyncMetadata :exec
@@ -457,3 +475,33 @@ FROM sync_events se
 JOIN sync_metadata sm ON se.metadata_id = sm.id
 ORDER BY se.started_at DESC
 LIMIT $1;
+
+-- ============================================================================
+-- MyGroups Command Queries (Feature 013)
+-- ============================================================================
+
+-- name: GetUserGroupsWithRole :many
+-- Get paginated list of groups where user is an active member, with their role
+-- Feature 014: Now includes username for enhanced display "Title (@username)"
+-- Verifies FR-002, FR-003, FR-006, FR-009 from Feature 013 specification
+SELECT 
+    g.chat_id,
+    g.title,
+    g.username,
+    gm.is_admin,
+    gm.joined_at
+FROM group_memberships gm
+JOIN groups g ON gm.chat_id = g.chat_id
+WHERE gm.user_id = $1 
+  AND gm.status = 'active'
+ORDER BY g.title ASC NULLS LAST
+LIMIT $2 OFFSET $3;
+
+-- name: CountUserGroups :one
+-- Count total active groups for pagination calculation
+-- Supports FR-011 (pagination) from Feature 013 specification
+SELECT COUNT(*) 
+FROM group_memberships gm
+JOIN groups g ON gm.chat_id = g.chat_id
+WHERE gm.user_id = $1 
+  AND gm.status = 'active';

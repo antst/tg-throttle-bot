@@ -533,10 +533,50 @@
   },
   "cmd_help_user": {
     "description": "User help text (shown to everyone)",
-    "other": "🤖 Throttle Bot - Multi-venster snelheidsbegrenzer\n\n👤 **Jouw commando's:**\n• /help - Toon dit helpbericht\n• /help admin - Toon beheerdercommando's\n• /mystatus @groep - Controleer je huidige gebruik\n  Voorbeeld: /mystatus @home\n• /config @groep - Toon configuratie\n  Voorbeeld: /config @home\n• /setlanguage <taal> - Stel je taal in\n  Voorbeeld: /setlanguage dutch\n\n💡 **Hoe het werkt:**\nElke groep heeft maximaal 3 snelheidsbeperkingsvensters (A, B, C) met verschillende:\n- Tekenlimieten (bijv. 1000, 5000, 10000 tekens)\n- Tijdvensters (bijv. 30 minuten, 2 uur, 7 dagen)\n\nJe berichten tellen mee voor alle actieve vensters. Als je de limiet van ELK venster overschrijdt, worden je berichten automatisch verwijderd totdat het venster wordt gereset.\n\n🎯 **Overschrijvingsstatussen:**\n- **Normaal**: Snelheidsbeperking is van toepassing (standaard)\n- **Witte lijst**: Je berichten zijn altijd toegestaan ✅\n- **Zwarte lijst**: Je berichten worden altijd geblokkeerd ❌\n\n💬 Neem contact op met een beheerder als je hulp nodig hebt!"
+    "other": "🤖 Throttle Bot - Multi-venster snelheidsbegrenzer\n\n👤 **Jouw commando's:**\n• /help - Toon dit helpbericht\n• /help admin - Toon beheerdercommando's\n• /mystatus @groep - Controleer je huidige gebruik\n  Voorbeeld: /mystatus @home\n• /mygroups - Lijst groepen waar jij en de bot beide lid van zijn\n• /setlanguage <taal> - Stel je taal in\n  Voorbeeld: /setlanguage dutch\n\n💡 **Hoe het werkt:**\nElke groep heeft maximaal 3 snelheidsbeperkingsvensters (A, B, C) met verschillende:\n- Tekenlimieten (bijv. 1000, 5000, 10000 tekens)\n- Tijdvensters (bijv. 30 minuten, 2 uur, 7 dagen)\n\nJe berichten tellen mee voor alle actieve vensters. Als je de limiet van ELK venster overschrijdt, worden je berichten automatisch verwijderd totdat het venster wordt gereset.\n\n🎯 **Overschrijvingsstatussen:**\n- **Normaal**: Snelheidsbeperking is van toepassing (standaard)\n- **Witte lijst**: Je berichten zijn altijd toegestaan ✅\n- **Zwarte lijst**: Je berichten worden altijd geblokkeerd ❌\n\n💬 Neem contact op met een beheerder als je hulp nodig hebt!"
   },
   "cmd_help_admin": {
     "description": "Admin help text (additional commands for admins)",
     "other": "\n\n� **Beheerdercommando's:**\n\n**Vensterbeheer:**\n• /setwindow @groep <a|b|c> <limiet> <duur>\n  Voorbeeld: /setwindow @home a 1000 30m\n• /enablewindow @groep <a|b|c>\n  Voorbeeld: /enablewindow @home a\n• /disablewindow @groep <a|b|c>\n  Voorbeeld: /disablewindow @home b\n\n**Gebruikersbeheer:**\n• /override @groep <user_id|@username> <whitelist|blacklist|clear> [duur]\n  Voorbeeld: /override @home @alice whitelist 7d\n  Voorbeeld: /override @home 123456789 blacklist\n  Voorbeeld: /override @home @bob clear\n• /checkuser @groep <user_id|@username>\n  Voorbeeld: /checkuser @home @alice\n• /overrides @groep\n  Voorbeeld: /overrides @home\n\n**Groepsbesturing:**\n• /pause @groep [duur]\n  Voorbeeld: /pause @home 2h\n  Voorbeeld: /pause @home (permanent)\n• /resume @groep\n  Voorbeeld: /resume @home\n\n**Taal:**\n• /setlanguage <taal> (voor persoonlijk gebruik)\n  Voorbeeld: /setlanguage dutch\n• /setlanguage @groep <taal> (voor groepstaal instellen)\n  Voorbeeld: /setlanguage @home dutch\n  Beschikbaar: english, russian, dutch (of en, ru, nl)\n\n📊 **Configuratie bekijken:**\n• /config @groep - Toon alle vensterinstellingen\n  Voorbeeld: /config @home\n\n⏰ **Duurformaten:** Xm (minuten), Xh (uren), Xd (dagen)\nVoorbeelden: 30m, 2h, 7d, 365d"
+  },
+  "cmd_mygroups_help": {
+    "description": "Help text for /mygroups command",
+    "other": "Bekijk lijst van groepen waar jij en de bot beide lid van zijn"
+  },
+  "cmd_mygroups_header": {
+    "description": "Header for group list (single page)",
+    "other": "📋 Jouw Groepen"
+  },
+  "cmd_mygroups_header_paginated": {
+    "description": "Header for group list with pagination info",
+    "other": "📋 Jouw Groepen (Pagina {{.current}} van {{.total}})"
+  },
+  "cmd_mygroups_role_admin": {
+    "description": "Role label for admin users",
+    "other": "beheerder"
+  },
+  "cmd_mygroups_role_user": {
+    "description": "Role label for regular users",
+    "other": "gebruiker"
+  },
+  "cmd_mygroups_empty": {
+    "description": "Message when user has no shared groups with bot",
+    "other": "Je bent geen lid van groepen waar deze bot aanwezig is."
+  },
+  "cmd_mygroups_next_page": {
+    "description": "Navigation instruction for next page",
+    "other": "\n\nGebruik /mygroups {{.page}} om de volgende pagina te zien"
+  },
+  "cmd_mygroups_unnamed_group": {
+    "description": "Fallback text for groups with NULL title",
+    "other": "Naamloze Groep (ID: {{.chatID}})"
+  },
+  "cmd_mygroups_invalid_page": {
+    "description": "Error message for invalid page number",
+    "other": "Ongeldig paginanummer. Gebruik /mygroups [1-{{.totalPages}}]"
+  },
+  "cmd_mygroups_error": {
+    "description": "Generic error message for /mygroups command",
+    "other": "Kan groepenlijst niet ophalen. Probeer het opnieuw."
   }
 }

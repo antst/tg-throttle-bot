@@ -14,12 +14,15 @@ type Querier interface {
 	// Delete messages older than retention period (cleanup job)
 	// Should be run periodically to prevent unbounded growth
 	CleanupOldMessages(ctx context.Context, dollar_1 *string) error
+	// Count total active groups for pagination calculation
+	// Supports FR-011 (pagination) from Feature 013 specification
+	CountUserGroups(ctx context.Context, userID int64) (int64, error)
 	// Initialize default windows for a new group
 	// Window A: 100 chars/1 minute (enabled by default)
 	// Window B: 1000 chars/1 hour (disabled by default)
 	// Window C: 10000 chars/1 day (disabled by default)
 	CreateDefaultWindows(ctx context.Context, chatID int64) error
-	// Initialize sync metadata for a new group
+	// Initialize sync metadata for a new group (upserts to handle existing records)
 	CreateSyncMetadata(ctx context.Context, chatID int64) (SyncMetadatum, error)
 	// ============================================================================
 	// LEGACY Statistics Queries (DISABLED - table 'messages' removed)
@@ -30,8 +33,9 @@ type Querier interface {
 	// ============================================================================
 	// Create group record if it doesn't exist (required for foreign key constraints)
 	EnsureGroup(ctx context.Context, chatID int64) error
-	// Create or update group record with username (Feature 011: proactive group records)
-	EnsureGroupWithUsername(ctx context.Context, arg EnsureGroupWithUsernameParams) error
+	// Create or update group record with both username and title (Feature 014: unified metadata upsert)
+	// This replaces the broken EnsureGroupWithUsername and EnsureGroupWithTitle queries that caused data corruption
+	EnsureGroupMetadata(ctx context.Context, arg EnsureGroupMetadataParams) error
 	// Create user record if it doesn't exist (required for foreign key constraints)
 	// Also updates username and last_seen on every call (for username harvesting)
 	EnsureUser(ctx context.Context, arg EnsureUserParams) error
@@ -45,7 +49,9 @@ type Querier interface {
 	GetAllWindows(ctx context.Context, chatID int64) ([]WindowSlot, error)
 	// Get all enabled windows for evaluation
 	GetEnabledWindows(ctx context.Context, chatID int64) ([]GetEnabledWindowsRow, error)
-	// Look up group by @username for group parameter parsing (Feature 008)
+	// Get group by chat_id - Feature 014: unified resolution
+	GetGroupByChatID(ctx context.Context, chatID int64) (GetGroupByChatIDRow, error)
+	// Get group by @username (case-insensitive) - Feature 014: unified resolution
 	GetGroupByUsername(ctx context.Context, lower string) (GetGroupByUsernameRow, error)
 	// ============================================================================
 	// LEGACY Restriction Management Queries (DISABLED - table removed in migration 000003)
@@ -89,6 +95,8 @@ type Querier interface {
 	// ============================================================================
 	// Get membership record for user in group
 	GetGroupMembership(ctx context.Context, arg GetGroupMembershipParams) (GroupMembership, error)
+	// Get groups by exact title match - Feature 014: unified resolution (may return multiple)
+	GetGroupsByTitle(ctx context.Context, title *string) ([]GetGroupsByTitleRow, error)
 	// Get groups that need periodic sync (next_sync_at < NOW)
 	GetGroupsNeedingSync(ctx context.Context, limit int32) ([]GetGroupsNeedingSyncRow, error)
 	// Get recent sync events for monitoring (last N events)
@@ -97,6 +105,13 @@ type Querier interface {
 	GetStaleGroupMemberships(ctx context.Context) ([]GetStaleGroupMembershipsRow, error)
 	// Resolve @username to user_id (case-insensitive lookup)
 	GetUserByUsername(ctx context.Context, lower string) (int64, error)
+	// ============================================================================
+	// MyGroups Command Queries (Feature 013)
+	// ============================================================================
+	// Get paginated list of groups where user is an active member, with their role
+	// Feature 014: Now includes username for enhanced display "Title (@username)"
+	// Verifies FR-002, FR-003, FR-006, FR-009 from Feature 013 specification
+	GetUserGroupsWithRole(ctx context.Context, arg GetUserGroupsWithRoleParams) ([]GetUserGroupsWithRoleRow, error)
 	// Retrieve user's language preference for private responses (Feature 008)
 	GetUserLanguage(ctx context.Context, userID int64) (*string, error)
 	// GetMostViolatedWindow removed - no restriction table in simple design

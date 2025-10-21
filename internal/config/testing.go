@@ -1,10 +1,6 @@
 // Package config provides configuration loading and validation for the Throttle Bot application.
 package config
 
-import (
-	"time"
-)
-
 // TestConfigOption is a function that configures a test Config.
 type TestConfigOption func(*Config)
 
@@ -16,15 +12,13 @@ type TestConfigOption func(*Config)
 //
 //	cfg := NewTestConfig(
 //	  WithDatabaseURL("postgres://localhost/test"),
-//	  WithDefaultCharLimit(1000),
+//	  WithLogLevel("debug"),
 //	)
 func NewTestConfig(opts ...TestConfigOption) *Config {
 	cfg := &Config{
 		// Set reasonable defaults for tests
-		LogLevel:         "info",
-		Port:             "8080",
-		DefaultCharLimit: 100,
-		DefaultWindow:    time.Hour,
+		LogLevel: "info",
+		Port:     "8080",
 	}
 
 	for _, opt := range opts {
@@ -52,20 +46,6 @@ func WithDatabaseURL(url string) TestConfigOption {
 func WithLogLevel(level string) TestConfigOption {
 	return func(cfg *Config) {
 		cfg.LogLevel = level
-	}
-}
-
-// WithDefaultCharLimit sets the default character limit for test config.
-func WithDefaultCharLimit(limit int) TestConfigOption {
-	return func(cfg *Config) {
-		cfg.DefaultCharLimit = limit
-	}
-}
-
-// WithDefaultWindow sets the default time window for test config.
-func WithDefaultWindow(window time.Duration) TestConfigOption {
-	return func(cfg *Config) {
-		cfg.DefaultWindow = window
 	}
 }
 

@@ -52,8 +52,6 @@ func main() {
 
 	logger.Infow(
 		"Starting Throttle Bot",
-		"default_char_limit", cfg.DefaultCharLimit,
-		"default_window", cfg.DefaultWindow,
 		"log_level", cfg.LogLevel,
 	)
 
@@ -122,6 +120,14 @@ func main() {
 	syncCoordinator := sync.NewSyncCoordinator(client, rateLimitStore, logger.Desugar())
 	handler.SetSyncCoordinator(syncCoordinator)
 	logger.Info("Sync coordinator initialized for proactive member synchronization")
+
+	// Perform startup synchronization for all existing groups (Feature 013 enhancement)
+	logger.Info("Performing startup member synchronization for existing groups...")
+	if err := syncCoordinator.StartupSync(ctx); err != nil {
+		logger.Warnw("Startup synchronization completed with errors", "error", err)
+	} else {
+		logger.Info("Startup synchronization completed successfully")
+	}
 
 	// Create and start background worker for cleanup
 	worker := ratelimit.NewWorker(rateLimitStore, client.GetBotAPI())

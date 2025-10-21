@@ -81,17 +81,20 @@ func ValidateSetLimitInput(charLimitStr string, windowType string) (int, string,
 	return charLimit, normalizedWindowType, nil
 }
 
-// GroupIdentifier represents a parsed group reference (username or numeric ID)
+// GroupIdentifier represents a parsed group reference (username, numeric ID, or title)
 type GroupIdentifier struct {
 	GroupID  int64  // Numeric group ID (negative for supergroups)
 	Username string // Group @username (without @ prefix)
-	IsName   bool   // True if parsed from @username, false if numeric ID
+	Title    string // Group title for title-based lookup (Feature 014)
+	IsName   bool   // True if parsed from @username, false if numeric ID or title
+	IsTitle  bool   // True if parsed as title (neither @ nor numeric) - Feature 014
 }
 
 // ParseGroupIdentifier parses a group reference from command arguments.
-// Supports two formats:
+// Supports three formats (Feature 014):
 //   - @username (e.g., @home, @workgroup)
 //   - Numeric ID (e.g., -4211780967, -1001234567890)
+//   - "Title" (e.g., "My Cool Group" - quoted or unquoted)
 //
 // Returns GroupIdentifier with parsed values, or error if invalid format.
 func ParseGroupIdentifier(arg string) (*GroupIdentifier, error) {
@@ -124,23 +127,38 @@ func ParseGroupIdentifier(arg string) (*GroupIdentifier, error) {
 		return &GroupIdentifier{
 			Username: username,
 			IsName:   true,
+			IsTitle:  false,
 		}, nil
 	}
 
 	// Try parsing as numeric Group ID
 	groupID, err := strconv.ParseInt(arg, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid group identifier: must be @username or numeric ID")
+	if err == nil {
+		// Telegram group IDs are negative
+		if groupID >= 0 {
+			return nil, fmt.Errorf("invalid group ID: must be negative (e.g., -4211780967)")
+		}
+
+		return &GroupIdentifier{
+			GroupID: groupID,
+			IsName:  false,
+			IsTitle: false,
+		}, nil
 	}
 
-	// Telegram group IDs are negative
-	if groupID >= 0 {
-		return nil, fmt.Errorf("invalid group ID: must be negative (e.g., -4211780967)")
+	// Feature 014: Title-based resolution (fallback when not @ or numeric)
+	// Note: Quotes are already stripped by ParseCommand, but we trim again for safety
+	title := strings.Trim(arg, `"'`)
+	title = strings.TrimSpace(title)
+
+	if title == "" {
+		return nil, fmt.Errorf("group title cannot be empty")
 	}
 
 	return &GroupIdentifier{
-		GroupID: groupID,
+		Title:   title,
 		IsName:  false,
+		IsTitle: true,
 	}, nil
 }
 
@@ -171,17 +189,29 @@ func ResolveTargetGroup(chatID int64, args []string) (*GroupIdentifier, []string
 			return nil, nil, fmt.Errorf("when using commands from private chat, please specify the target group:\n" +
 				"  /command @groupname [args...]\n" +
 				"  or\n" +
-				"  /command -1234567890 [args...]")
+				"  /command -1234567890 [args...]\n" +
+				"  or\n" +
+				"  /command title [args...]\n" +
+				"  or\n" +
+				"  /command \"multi word title\" [args...]")
 		}
 
-		// Parse the first argument as group identifier
-		groupID, parseErr := ParseGroupIdentifier(args[0])
+		// Feature 014: Parse group identifier (quotes already stripped by command parser)
+		// Rule: Take ONLY first argument as group identifier
+		// - Starts with '-' → numeric chat ID
+		// - Starts with '@' → username
+		// - Otherwise → group title (single or multi-word if quoted in original command)
+		groupIdentifierStr := args[0]
+		remainingArgs := args[1:]
+
+		// Parse the group identifier
+		groupID, parseErr := ParseGroupIdentifier(groupIdentifierStr)
 		if parseErr != nil {
 			return nil, nil, fmt.Errorf("invalid group identifier: %w", parseErr)
 		}
 
 		// Return the identifier - caller must resolve username if needed
-		return groupID, args[1:], nil
+		return groupID, remainingArgs, nil
 	}
 
 	// Group chat: use current chat ID, no group parameter needed
@@ -191,20 +221,77 @@ func ResolveTargetGroup(chatID int64, args []string) (*GroupIdentifier, []string
 	}, args, nil
 }
 
+// GroupResolver provides methods to resolve group identifiers to chat IDs (Feature 014)
+type GroupResolver interface {
+	ResolveUsername(username string) (int64, error)
+	ResolveTitle(title string) ([]int64, error) // May return multiple matches
+	GetGroupInfo(chatID int64) (username, title *string, err error)
+}
+
 // ResolveGroupID resolves a GroupIdentifier to a numeric group ID.
-// If identifier is already numeric, returns it directly.
-// If identifier is a username, looks it up via the provided resolver function.
-func ResolveGroupID(identifier *GroupIdentifier, resolveUsername func(string) (int64, error)) (int64, error) {
-	if !identifier.IsName {
-		// Already a numeric ID
+// Feature 014: Supports chat_id, @username, and "title" with conflict detection.
+// Returns error if title matches multiple groups (ambiguous).
+func ResolveGroupID(identifier *GroupIdentifier, resolver GroupResolver) (int64, error) {
+	// Case 1: Already a numeric ID
+	if !identifier.IsName && !identifier.IsTitle {
 		return identifier.GroupID, nil
 	}
 
-	// Need to resolve username to ID
-	groupID, err := resolveUsername(identifier.Username)
-	if err != nil {
-		return 0, fmt.Errorf("failed to resolve @%s: %w", identifier.Username, err)
+	// Case 2: Username-based resolution
+	if identifier.IsName {
+		groupID, err := resolver.ResolveUsername(identifier.Username)
+		if err != nil {
+			return 0, fmt.Errorf("failed to resolve @%s: %w", identifier.Username, err)
+		}
+		return groupID, nil
 	}
 
-	return groupID, nil
+	// Case 3: Title-based resolution (Feature 014)
+	if identifier.IsTitle {
+		chatIDs, err := resolver.ResolveTitle(identifier.Title)
+		if err != nil {
+			return 0, fmt.Errorf("failed to resolve group by title '%s': %w", identifier.Title, err)
+		}
+
+		if len(chatIDs) == 0 {
+			return 0, fmt.Errorf("no group found with title '%s'", identifier.Title)
+		}
+
+		// Conflict detection: multiple groups with same title
+		if len(chatIDs) > 1 {
+			// Build error message listing all matches
+			var conflictMsg strings.Builder
+			conflictMsg.WriteString(fmt.Sprintf("❌ Multiple groups found with title '%s':\n\n", identifier.Title))
+
+			for i, chatID := range chatIDs {
+				username, title, err := resolver.GetGroupInfo(chatID)
+				if err != nil {
+					conflictMsg.WriteString(fmt.Sprintf("%d. ID: %d (error: %v)\n", i+1, chatID, err))
+					continue
+				}
+
+				groupDisplay := ""
+				if title != nil && *title != "" {
+					groupDisplay = *title
+					if username != nil && *username != "" {
+						groupDisplay = fmt.Sprintf("%s (@%s)", groupDisplay, *username)
+					}
+				} else if username != nil && *username != "" {
+					groupDisplay = fmt.Sprintf("@%s", *username)
+				} else {
+					groupDisplay = fmt.Sprintf("ID: %d", chatID)
+				}
+
+				conflictMsg.WriteString(fmt.Sprintf("%d. %s\n", i+1, groupDisplay))
+			}
+
+			conflictMsg.WriteString("\n💡 Please use @username or chat ID instead to specify which group you mean.")
+
+			return 0, fmt.Errorf(conflictMsg.String())
+		}
+
+		return chatIDs[0], nil
+	}
+
+	return 0, fmt.Errorf("invalid group identifier state")
 }

@@ -51,9 +51,14 @@ type MultiWindowStorage interface {
 	GetUserByUsername(ctx context.Context, username string) (int64, error)
 	GetUsernameByUserID(ctx context.Context, userID int64) (string, error)
 
-	// Group management (username harvesting and resolution)
+	// Group management (unified metadata harvesting)
 	GetGroupByUsername(ctx context.Context, username string) (int64, error)
-	EnsureGroupWithUsername(ctx context.Context, chatID int64, username string) error // Feature 011: proactive group record creation
+	EnsureGroupMetadata(ctx context.Context, chatID int64, username, title string) error // Feature 014: unified metadata upsert
+
+	// Group resolution (Feature 014: unified resolution with conflict detection)
+	ResolveUsername(username string) (int64, error)
+	ResolveTitle(title string) ([]int64, error)
+	GetGroupInfo(chatID int64) (username, title *string, err error)
 
 	// Window slot configuration
 	CreateDefaultWindows(ctx context.Context, chatID int64) error
@@ -103,6 +108,10 @@ type MultiWindowStorage interface {
 
 	// Group management
 	GetAllGroups(ctx context.Context) ([]int64, error)
+
+	// MyGroups command queries (Feature 013)
+	GetUserGroupsWithRole(ctx context.Context, userID int64, limit, offset int32) ([]UserGroupMembership, error)
+	CountUserGroups(ctx context.Context, userID int64) (int64, error)
 }
 
 // UserWindowStat represents per-window usage statistics for /mystatus command
@@ -124,4 +133,13 @@ type UserOverride struct {
 	CreatedAt     time.Time
 	CreatedBy     int64
 	ExpiresAt     *time.Time
+}
+
+// UserGroupMembership represents a group where user is a member (Feature 013)
+type UserGroupMembership struct {
+	ChatID   int64
+	Title    *string // May be NULL if group name not yet captured
+	Username *string // May be NULL for private groups (Feature 014: enhanced display)
+	IsAdmin  bool
+	JoinedAt time.Time
 }

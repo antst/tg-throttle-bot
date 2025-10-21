@@ -3,7 +3,6 @@ package unit
 
 import (
 	"testing"
-	"time"
 
 	"github.com/antst/tg-throttle-bot/internal/config"
 	"github.com/stretchr/testify/assert"
@@ -17,8 +16,6 @@ func TestNewTestConfig(t *testing.T) {
 
 			assert.Equal(t, "info", cfg.LogLevel)
 			assert.Equal(t, "8080", cfg.Port)
-			assert.Equal(t, 100, cfg.DefaultCharLimit)
-			assert.Equal(t, time.Hour, cfg.DefaultWindow)
 		},
 	)
 
@@ -39,16 +36,12 @@ func TestNewTestConfig(t *testing.T) {
 				config.WithTelegramToken("test-token-123"),
 				config.WithDatabaseURL("postgres://localhost/testdb"),
 				config.WithLogLevel("debug"),
-				config.WithDefaultCharLimit(2000),
-				config.WithDefaultWindow(24*time.Hour),
 				config.WithPort("9090"),
 			)
 
 			assert.Equal(t, "test-token-123", cfg.TelegramToken)
 			assert.Equal(t, "postgres://localhost/testdb", cfg.DatabaseURL)
 			assert.Equal(t, "debug", cfg.LogLevel)
-			assert.Equal(t, 2000, cfg.DefaultCharLimit)
-			assert.Equal(t, 24*time.Hour, cfg.DefaultWindow)
 			assert.Equal(t, "9090", cfg.Port)
 		},
 	)

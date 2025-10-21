@@ -149,6 +149,28 @@ var (
 			Buckets: []float64{.01, .025, .05, .1, .25, .5, 1, 2},
 		},
 	)
+
+	// ========================================================================
+	// MyGroups Command Metrics (Feature 013)
+	// ========================================================================
+
+	// MyGroupsCommandTotal tracks /mygroups command executions
+	MyGroupsCommandTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "throttlebot_mygroups_command_total",
+			Help: "Total number of /mygroups command executions",
+		},
+		[]string{"status"}, // "success" or "error"
+	)
+
+	// MyGroupsCommandDuration tracks /mygroups command execution time
+	MyGroupsCommandDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "throttlebot_mygroups_command_duration_seconds",
+			Help:    "Duration of /mygroups command execution",
+			Buckets: []float64{.01, .025, .05, .1, .25, .5, 1, 2},
+		},
+	)
 )
 
 // RecordCommand records a command execution with its duration
@@ -240,4 +262,14 @@ func NewTimer() *Timer {
 func (t *Timer) ObserveDuration(operation string) {
 	duration := time.Since(t.start)
 	RecordDatabaseQuery(operation, duration)
+}
+
+// ============================================================================
+// MyGroups Command Metrics Functions (Feature 013)
+// ============================================================================
+
+// RecordMyGroupsCommand records a /mygroups command execution
+func RecordMyGroupsCommand(status string, duration time.Duration) {
+	MyGroupsCommandTotal.WithLabelValues(status).Inc()
+	MyGroupsCommandDuration.Observe(duration.Seconds())
 }

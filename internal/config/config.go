@@ -5,20 +5,16 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
-	"time"
 
 	"github.com/joho/godotenv"
 )
 
 // Config holds the application configuration loaded from environment variables.
 type Config struct {
-	TelegramToken    string
-	DatabaseURL      string
-	LogLevel         string
-	DefaultCharLimit int
-	DefaultWindow    time.Duration
-	Port             string
+	TelegramToken string
+	DatabaseURL   string
+	LogLevel      string
+	Port          string
 }
 
 // Load reads configuration from environment variables and returns a validated Config.
@@ -33,21 +29,6 @@ func Load() (*Config, error) {
 		LogLevel:      getEnvOrDefault("LOG_LEVEL", "info"),
 		Port:          getEnvOrDefault("PORT", "8080"),
 	}
-
-	// Parse char limit
-	charLimit, err := strconv.Atoi(getEnvOrDefault("DEFAULT_CHAR_LIMIT", "100"))
-	if err != nil {
-		return nil, fmt.Errorf("invalid DEFAULT_CHAR_LIMIT: %w", err)
-	}
-	cfg.DefaultCharLimit = charLimit
-
-	// Parse window duration
-	windowStr := getEnvOrDefault("DEFAULT_WINDOW", "1h")
-	window, err := time.ParseDuration(windowStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid DEFAULT_WINDOW: %w", err)
-	}
-	cfg.DefaultWindow = window
 
 	// Validate required fields
 	if cfg.TelegramToken == "" {

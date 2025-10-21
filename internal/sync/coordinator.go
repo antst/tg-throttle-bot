@@ -34,6 +34,7 @@ type SyncCoordinator struct {
 type SyncStorage interface {
 	// Group operations
 	EnsureGroup(ctx context.Context, chatID int64) error
+	GetAllGroups(ctx context.Context) ([]int64, error)
 
 	// User operations
 	EnsureUser(ctx context.Context, userID int64, username string) error
@@ -539,4 +540,73 @@ func extractRetryAfter(err error) time.Duration {
 	// The Telegram API returns retry_after in seconds in the error response
 	// For now, return 0 to use exponential backoff
 	return 0
+}
+
+// StartupSync performs member synchronization for all groups in the database on bot startup.
+// This ensures group titles and membership records are up-to-date after bot restarts.
+func (sc *SyncCoordinator) StartupSync(ctx context.Context) error {
+	sc.logger.Info("Starting startup synchronization for all groups")
+	startTime := time.Now()
+
+	// Get all groups from database
+	chatIDs, err := sc.store.GetAllGroups(ctx)
+	if err != nil {
+		sc.logger.Error("Failed to get all groups for startup sync", zap.Error(err))
+		return fmt.Errorf("failed to get groups: %w", err)
+	}
+
+	if len(chatIDs) == 0 {
+		sc.logger.Info("No groups found - skipping startup sync")
+		return nil
+	}
+
+	sc.logger.Info("Found groups for startup sync", zap.Int("count", len(chatIDs)))
+
+	successCount := 0
+	failureCount := 0
+
+	// Sync each group with small delays to avoid rate limiting
+	for i, chatID := range chatIDs {
+		// Skip private chat entries (positive chat IDs)
+		if chatID > 0 {
+			continue
+		}
+
+		sc.logger.Debug("Syncing group on startup",
+			zap.Int64("chat_id", chatID),
+			zap.Int("progress", i+1),
+			zap.Int("total", len(chatIDs)),
+		)
+
+		// Perform initial sync for this group
+		if err := sc.InitialGroupSync(ctx, chatID); err != nil {
+			sc.logger.Warn("Failed to sync group on startup",
+				zap.Int64("chat_id", chatID),
+				zap.Error(err),
+			)
+			failureCount++
+			// Continue with other groups even if one fails
+			continue
+		}
+
+		successCount++
+
+		// Small delay between groups to avoid rate limiting
+		if i < len(chatIDs)-1 {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+
+	duration := time.Since(startTime)
+	sc.logger.Info("Startup synchronization completed",
+		zap.Int("success", successCount),
+		zap.Int("failures", failureCount),
+		zap.Duration("duration", duration),
+	)
+
+	if failureCount > 0 {
+		return fmt.Errorf("startup sync completed with %d failures out of %d groups", failureCount, len(chatIDs))
+	}
+
+	return nil
 }

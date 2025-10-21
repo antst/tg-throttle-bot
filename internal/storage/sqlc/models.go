@@ -16,6 +16,8 @@ type Group struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	Language  string             `json:"language"`
 	Username  *string            `json:"username"`
+	// Group display name (may be NULL if not yet captured)
+	Title *string `json:"title"`
 }
 
 // Tracks group membership status with soft delete pattern

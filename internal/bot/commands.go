@@ -12,6 +12,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
 	i18nPkg "github.com/antst/tg-throttle-bot/internal/i18n"
+	"github.com/antst/tg-throttle-bot/internal/metrics"
 	"github.com/antst/tg-throttle-bot/internal/ratelimit"
 	"github.com/antst/tg-throttle-bot/internal/telegram"
 )
@@ -90,6 +91,7 @@ func localize(cmdCtx CommandContext, key string, data map[string]interface{}) st
 }
 
 // ParseCommand extracts command name and arguments from message text.
+// Supports quoted strings for multi-word arguments (Feature 014).
 func ParseCommand(text string) (*Command, error) {
 	text = strings.TrimSpace(text)
 
@@ -104,8 +106,12 @@ func ParseCommand(text string) (*Command, error) {
 		return nil, fmt.Errorf("empty command")
 	}
 
-	// Split by whitespace
-	parts := strings.Fields(text)
+	// Parse arguments with quote support (Feature 014: multi-word group titles)
+	parts, err := parseCommandArgs(text)
+	if err != nil {
+		return nil, err
+	}
+
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("empty command")
 	}
@@ -120,6 +126,80 @@ func ParseCommand(text string) (*Command, error) {
 		Name: strings.ToLower(cmdPart),
 		Args: parts[1:],
 	}, nil
+}
+
+// parseCommandArgs splits command text into arguments, handling quoted strings.
+// Supports straight quotes (', "), curly quotes (", ", ', '), and guillemets («, »).
+// Example: `cmd arg1 "multi word arg" arg3` → ["cmd", "arg1", "multi word arg", "arg3"]
+func parseCommandArgs(text string) ([]string, error) {
+	var args []string
+	var current strings.Builder
+	var inQuote rune // 0 = not in quote, else the opening quote character
+
+	// Map of closing quotes to their opening counterparts
+	closeQuotes := map[rune]rune{
+		'"':      '"',      // straight double quote
+		'\'':     '\'',     // straight single quote
+		'\u201d': '\u201c', // curly double quote " → "
+		'\u2019': '\u2018', // curly single quote ' → '
+		'\u00bb': '\u00ab', // guillemet » → «
+	}
+
+	// Opening quote characters (straight and curly)
+	openingQuotes := map[rune]bool{
+		'"':      true,
+		'\'':     true,
+		'\u201c': true, // "
+		'\u2018': true, // '
+		'\u00ab': true, // «
+	}
+
+	for i, r := range text {
+		switch {
+		case inQuote != 0:
+			// Inside quoted string - check if this is the closing quote
+			if (r == inQuote) || (closeQuotes[r] == inQuote) {
+				// Closing quote found
+				args = append(args, current.String())
+				current.Reset()
+				inQuote = 0
+			} else {
+				current.WriteRune(r)
+			}
+
+		case openingQuotes[r]:
+			// Opening quote (straight or curly)
+			if current.Len() > 0 {
+				// Save any accumulated non-quoted text first
+				args = append(args, current.String())
+				current.Reset()
+			}
+			inQuote = r
+
+		case r == ' ' || r == '\t' || r == '\n':
+			// Whitespace - end of argument
+			if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+
+		default:
+			// Regular character
+			current.WriteRune(r)
+		}
+
+		// Check for unclosed quote at end
+		if i == len(text)-1 && inQuote != 0 {
+			return nil, fmt.Errorf("unclosed quote in command")
+		}
+	}
+
+	// Add final argument if any
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+
+	return args, nil
 }
 
 // ParseUserIdentifier parses user identifier (ID or @username)
@@ -1030,4 +1110,194 @@ func (h *CommandHandler) HandleResume(ctx context.Context, cmdCtx CommandContext
 	}
 
 	return localize(cmdCtx, "cmd_resume_success", nil), nil
+}
+
+// ============================================================================
+// MyGroups Command (Feature 013)
+// ============================================================================
+
+// HandleMyGroups displays a paginated list of groups where user and bot are both members
+// Available to all users (no admin check required - FR-001)
+// Syntax: /mygroups [page_number]
+func (h *CommandHandler) HandleMyGroups(ctx context.Context, cmdCtx CommandContext, args []string) (string, error) {
+	// T048: Metrics instrumentation
+	start := time.Now()
+	var status string
+	defer func() {
+		metrics.RecordMyGroupsCommand(status, time.Since(start))
+	}()
+
+	const pageSize = 20 // FR-011: 20 groups per page
+
+	// Parse page number from arguments (default: 1)
+	pageNumber, err := parseMyGroupsArgs(args)
+	if err != nil {
+		status = "error"
+		return "", &ValidationError{err.Error()}
+	}
+
+	// Get total count for pagination calculation
+	totalGroups, err := h.store.CountUserGroups(ctx, cmdCtx.UserID)
+	if err != nil {
+		status = "error"
+		return "", fmt.Errorf("failed to count groups: %w", err)
+	}
+
+	// Calculate pagination
+	totalPages, currentPage, offset := calculatePagination(int(totalGroups), pageNumber, pageSize)
+
+	// Validate page number is within bounds
+	if totalGroups > 0 && (currentPage < 1 || currentPage > totalPages) {
+		status = "error"
+		return "", &ValidationError{
+			localize(cmdCtx, "cmd_mygroups_invalid_page", map[string]interface{}{
+				"totalPages": totalPages,
+			}),
+		}
+	}
+
+	// Fetch groups for current page (FR-002, FR-003, FR-006, FR-009)
+	groups, err := h.store.GetUserGroupsWithRole(ctx, cmdCtx.UserID, int32(pageSize), int32(offset))
+	if err != nil {
+		status = "error"
+		return "", fmt.Errorf("failed to get user groups: %w", err)
+	}
+
+	// Format and return response (FR-004, FR-008, FR-010, FR-011)
+	status = "success"
+	return formatGroupList(cmdCtx, groups, currentPage, totalPages), nil
+}
+
+// ParseMyGroupsArgs parses command arguments to extract page number (exported for testing)
+// Returns page number (1-indexed) or error if invalid
+func ParseMyGroupsArgs(args []string) (int, error) {
+	return parseMyGroupsArgs(args)
+}
+
+// parseMyGroupsArgs parses command arguments to extract page number
+// Returns page number (1-indexed) or error if invalid
+func parseMyGroupsArgs(args []string) (int, error) {
+	// No arguments: default to page 1
+	if len(args) == 0 {
+		return 1, nil
+	}
+
+	// Parse first argument as page number
+	page, err := strconv.Atoi(args[0])
+	if err != nil {
+		return 0, fmt.Errorf("invalid page number: must be a positive integer")
+	}
+
+	// Validate page number is positive
+	if page < 1 {
+		return 0, fmt.Errorf("invalid page number: must be >= 1")
+	}
+
+	return page, nil
+}
+
+// CalculatePagination computes pagination values (exported for testing)
+// Returns: totalPages, currentPage (clamped), offset
+func CalculatePagination(totalGroups, requestedPage, pageSize int) (int, int, int) {
+	return calculatePagination(totalGroups, requestedPage, pageSize)
+}
+
+// calculatePagination computes pagination values
+// Returns: totalPages, currentPage (clamped), offset
+func calculatePagination(totalGroups, requestedPage, pageSize int) (int, int, int) {
+	// Calculate total pages (ceiling division)
+	totalPages := (totalGroups + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1 // Always at least 1 page
+	}
+
+	// Clamp current page to valid range
+	currentPage := requestedPage
+	if currentPage < 1 {
+		currentPage = 1
+	}
+	if currentPage > totalPages {
+		currentPage = totalPages
+	}
+
+	// Calculate offset for database query
+	offset := (currentPage - 1) * pageSize
+	if offset < 0 {
+		offset = 0
+	}
+
+	return totalPages, currentPage, offset
+}
+
+// FormatGroupList formats the group list with pagination info (exported for testing)
+// Implements FR-004 (display name), FR-008 (localization), FR-010 (NULL handling), FR-011 (pagination)
+func FormatGroupList(cmdCtx CommandContext, groups []ratelimit.UserGroupMembership, currentPage, totalPages int) string {
+	return formatGroupList(cmdCtx, groups, currentPage, totalPages)
+}
+
+// formatGroupList formats the group list with pagination info
+// Implements FR-004 (display name), FR-008 (localization), FR-010 (NULL handling), FR-011 (pagination)
+func formatGroupList(cmdCtx CommandContext, groups []ratelimit.UserGroupMembership, currentPage, totalPages int) string {
+	// FR-005: Empty state handling
+	if len(groups) == 0 {
+		return localize(cmdCtx, "cmd_mygroups_empty", nil)
+	}
+
+	// Build response with header
+	var response strings.Builder
+
+	// Header with optional pagination info
+	if totalPages > 1 {
+		response.WriteString(localize(cmdCtx, "cmd_mygroups_header_paginated", map[string]interface{}{
+			"current": currentPage,
+			"total":   totalPages,
+		}))
+	} else {
+		response.WriteString(localize(cmdCtx, "cmd_mygroups_header", nil))
+	}
+	response.WriteString("\n\n")
+
+	// List groups with numbering
+	for i, group := range groups {
+		// Number (1-indexed per page, not global)
+		response.WriteString(fmt.Sprintf("%d. ", i+1))
+
+		// Group name (FR-010: handle NULL titles) + Feature 014: show @username when available
+		groupDisplayName := ""
+		if group.Title != nil && *group.Title != "" {
+			groupDisplayName = *group.Title
+			// Add @username if available (public groups/channels)
+			if group.Username != nil && *group.Username != "" {
+				groupDisplayName = fmt.Sprintf("%s (@%s)", groupDisplayName, *group.Username)
+			}
+		} else if group.Username != nil && *group.Username != "" {
+			// Fallback to @username if no title
+			groupDisplayName = fmt.Sprintf("@%s", *group.Username)
+		} else {
+			// Last resort: unnamed group with ID
+			groupDisplayName = localize(cmdCtx, "cmd_mygroups_unnamed_group", map[string]interface{}{
+				"chatID": group.ChatID,
+			})
+		}
+		response.WriteString(groupDisplayName)
+
+		// Role indicator (FR-003: admin or user)
+		response.WriteString(" - ")
+		if group.IsAdmin {
+			response.WriteString(localize(cmdCtx, "cmd_mygroups_role_admin", nil))
+		} else {
+			response.WriteString(localize(cmdCtx, "cmd_mygroups_role_user", nil))
+		}
+
+		response.WriteString("\n")
+	}
+
+	// Pagination navigation (FR-011)
+	if totalPages > 1 && currentPage < totalPages {
+		response.WriteString(localize(cmdCtx, "cmd_mygroups_next_page", map[string]interface{}{
+			"page": currentPage + 1,
+		}))
+	}
+
+	return response.String()
 }

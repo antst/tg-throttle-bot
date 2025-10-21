@@ -1,12 +1,41 @@
 package unit
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/antst/tg-throttle-bot/internal/bot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// mockGroupResolver implements bot.GroupResolver for testing
+type mockGroupResolver struct {
+	resolveUsernameFunc func(username string) (int64, error)
+	resolveTitleFunc    func(title string) ([]int64, error)
+	getGroupInfoFunc    func(chatID int64) (username, title *string, err error)
+}
+
+func (m *mockGroupResolver) ResolveUsername(username string) (int64, error) {
+	if m.resolveUsernameFunc != nil {
+		return m.resolveUsernameFunc(username)
+	}
+	return 0, fmt.Errorf("ResolveUsername not implemented")
+}
+
+func (m *mockGroupResolver) ResolveTitle(title string) ([]int64, error) {
+	if m.resolveTitleFunc != nil {
+		return m.resolveTitleFunc(title)
+	}
+	return nil, fmt.Errorf("ResolveTitle not implemented")
+}
+
+func (m *mockGroupResolver) GetGroupInfo(chatID int64) (username, title *string, err error) {
+	if m.getGroupInfoFunc != nil {
+		return m.getGroupInfoFunc(chatID)
+	}
+	return nil, nil, fmt.Errorf("GetGroupInfo not implemented")
+}
 
 // TestParseGroupIdentifier_Username tests @username parsing (T033)
 func TestParseGroupIdentifier_Username(t *testing.T) {
@@ -125,9 +154,12 @@ func TestParseGroupIdentifier_NumericID(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "non-numeric string",
-			input:       "not-a-number",
-			expectError: true,
+			name:  "non-numeric string treated as title",
+			input: "not-a-number",
+			expected: &bot.GroupIdentifier{
+				Title:   "not-a-number",
+				IsTitle: true,
+			},
 		},
 	}
 
@@ -141,9 +173,16 @@ func TestParseGroupIdentifier_NumericID(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, result)
-				assert.Equal(t, tc.expected.GroupID, result.GroupID)
-				assert.Equal(t, tc.expected.IsName, result.IsName)
-				assert.False(t, result.IsName, "Should be marked as numeric ID")
+				if tc.expected.GroupID != 0 {
+					assert.Equal(t, tc.expected.GroupID, result.GroupID)
+					assert.False(t, result.IsName, "Should be marked as numeric ID")
+				} else if tc.expected.Username != "" {
+					assert.Equal(t, tc.expected.Username, result.Username)
+					assert.True(t, result.IsName, "Should be marked as username")
+				} else if tc.expected.Title != "" {
+					assert.Equal(t, tc.expected.Title, result.Title)
+					assert.True(t, result.IsTitle, "Should be marked as title")
+				}
 			}
 		})
 	}
@@ -155,6 +194,7 @@ func TestParseGroupIdentifier_Validation(t *testing.T) {
 		name        string
 		input       string
 		expectError bool
+		expected    *bot.GroupIdentifier
 		errorMsg    string
 	}{
 		{
@@ -176,10 +216,12 @@ func TestParseGroupIdentifier_Validation(t *testing.T) {
 			errorMsg:    "username cannot be empty after @",
 		},
 		{
-			name:        "invalid format - text without @",
-			input:       "home",
-			expectError: true,
-			errorMsg:    "invalid group identifier",
+			name:  "text without @ treated as title",
+			input: "home",
+			expected: &bot.GroupIdentifier{
+				Title:   "home",
+				IsTitle: true,
+			},
 		},
 	}
 
@@ -187,10 +229,17 @@ func TestParseGroupIdentifier_Validation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result, err := bot.ParseGroupIdentifier(tc.input)
 
-			require.Error(t, err)
-			assert.Nil(t, result)
-			if tc.errorMsg != "" {
-				assert.Contains(t, err.Error(), tc.errorMsg)
+			if tc.expectError {
+				require.Error(t, err)
+				assert.Nil(t, result)
+				if tc.errorMsg != "" {
+					assert.Contains(t, err.Error(), tc.errorMsg)
+				}
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				assert.Equal(t, tc.expected.Title, result.Title)
+				assert.True(t, result.IsTitle)
 			}
 		})
 	}
@@ -243,15 +292,28 @@ func TestParseGroupIdentifier_RealWorldExamples(t *testing.T) {
 func TestResolveTargetGroup(t *testing.T) {
 	t.Run("private chat requires group parameter", func(t *testing.T) {
 		privateChatID := int64(290924591) // Positive = private chat
-		args := []string{"a", "1000", "30m"}
+		args := []string{}                // No arguments
 
 		result, remainingArgs, err := bot.ResolveTargetGroup(privateChatID, args)
 
-		// Should fail because first arg "a" is not a valid group identifier
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid group identifier")
+		// Should fail because no group identifier provided
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "when using commands from private chat")
 		assert.Nil(t, result)
 		assert.Nil(t, remainingArgs)
+	})
+
+	t.Run("private chat with single-word title identifier", func(t *testing.T) {
+		privateChatID := int64(290924591)
+		args := []string{"home", "a", "1000", "30m"}
+
+		result, remainingArgs, err := bot.ResolveTargetGroup(privateChatID, args)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, "home", result.Title)
+		assert.True(t, result.IsTitle)
+		assert.Equal(t, []string{"a", "1000", "30m"}, remainingArgs)
 	})
 
 	t.Run("private chat with @username parameter", func(t *testing.T) {
@@ -327,9 +389,11 @@ func TestResolveGroupID(t *testing.T) {
 		}
 
 		// Resolver shouldn't be called
-		resolver := func(username string) (int64, error) {
-			t.Fatal("Resolver should not be called for numeric ID")
-			return 0, nil
+		resolver := &mockGroupResolver{
+			resolveUsernameFunc: func(username string) (int64, error) {
+				t.Fatal("Resolver should not be called for numeric ID")
+				return 0, nil
+			},
 		}
 
 		groupID, err := bot.ResolveGroupID(identifier, resolver)
@@ -345,10 +409,12 @@ func TestResolveGroupID(t *testing.T) {
 		}
 
 		resolverCalled := false
-		resolver := func(username string) (int64, error) {
-			resolverCalled = true
-			assert.Equal(t, "home", username)
-			return -4211780967, nil
+		resolver := &mockGroupResolver{
+			resolveUsernameFunc: func(username string) (int64, error) {
+				resolverCalled = true
+				assert.Equal(t, "home", username)
+				return -4211780967, nil
+			},
 		}
 
 		groupID, err := bot.ResolveGroupID(identifier, resolver)
@@ -364,8 +430,10 @@ func TestResolveGroupID(t *testing.T) {
 			IsName:   true,
 		}
 
-		resolver := func(username string) (int64, error) {
-			return 0, assert.AnError
+		resolver := &mockGroupResolver{
+			resolveUsernameFunc: func(username string) (int64, error) {
+				return 0, assert.AnError
+			},
 		}
 
 		groupID, err := bot.ResolveGroupID(identifier, resolver)

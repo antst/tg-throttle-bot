@@ -269,6 +269,12 @@ func (h *Handler) handleMessage(ctx context.Context, msg *tgbotapi.Message) erro
 	chatID := msg.Chat.ID
 	userID := msg.From.ID
 
+	// Rate limiting only applies to groups/supergroups, not private chats
+	if msg.Chat.Type == "private" {
+		h.logger.Debugw("Skipping rate limit for private chat", "chat_id", chatID)
+		return nil
+	}
+
 	// Harvest username for @username syntax support (Feature 006 - User Story 6)
 	// Extract username from Telegram message and update database on EVERY message
 	username := msg.From.UserName // May be empty string if user has no username
@@ -302,54 +308,48 @@ func (h *Handler) handleMessage(ctx context.Context, msg *tgbotapi.Message) erro
 		if !ok {
 			h.logger.Warn("Store is not *storage.RateLimitStorage, skipping reactive fallback")
 		} else {
-			// Ensure group record exists (with username if available)
+			// Feature 014: Unified metadata harvesting (prevents data corruption)
+			// Harvest both username and title in a single atomic operation
 			groupUsername := msg.Chat.UserName // May be empty for private groups
-			if err := fullStore.EnsureGroupWithUsername(ctx, chatID, groupUsername); err != nil {
+			groupTitle := msg.Chat.Title       // May be empty in some cases
+
+			if err := fullStore.EnsureGroupMetadata(ctx, chatID, groupUsername, groupTitle); err != nil {
 				h.logger.Warnw(
-					"Failed to ensure group record (reactive fallback)",
+					"Failed to ensure group metadata (reactive fallback)",
 					"chat_id", chatID,
 					"username", groupUsername,
+					"title", groupTitle,
 					"error", err,
 				)
 				// Non-fatal: Continue processing
 			}
 
-			// Ensure membership record exists (reactive fallback)
-			if h.syncCoordinator != nil {
-				// Try to determine if user is admin via fresh API call
-				// Note: This adds latency, but provides accurate role information
-				isAdmin := false
-				member, err := h.client.GetChatMember(ctx, chatID, userID)
-				if err == nil {
-					isAdmin = member.IsAdministrator() || member.IsCreator()
-				}
-
-				// Upsert membership with current state
-				_, err = fullStore.UpsertGroupMembership(ctx, storage.UpsertGroupMembershipParams{
-					ChatID:          chatID,
-					UserID:          userID,
-					Status:          storage.MembershipActive,
-					JoinedAt:        time.Now(), // Approximate: actual join time unknown
-					LeftAt:          nil,
-					IsAdmin:         isAdmin,
-					CanSendMessages: true, // Assume true if message was sent successfully
-				})
-				if err != nil {
-					h.logger.Warnw(
-						"Failed to upsert membership (reactive fallback)",
-						"chat_id", chatID,
-						"user_id", userID,
-						"error", err,
-					)
-					// Non-fatal: Continue processing
-				} else {
-					h.logger.Debugw(
-						"Reactive fallback: ensured membership",
-						"chat_id", chatID,
-						"user_id", userID,
-						"is_admin", isAdmin,
-					)
-				}
+			// Feature 013: Lightweight membership harvesting for /mygroups
+			// Always record membership when user sends a message (without API calls)
+			// This ensures /mygroups shows all groups where user is active
+			_, err := fullStore.UpsertGroupMembership(ctx, storage.UpsertGroupMembershipParams{
+				ChatID:          chatID,
+				UserID:          userID,
+				Status:          storage.MembershipActive,
+				JoinedAt:        time.Now(), // Approximate: actual join time unknown
+				LeftAt:          nil,
+				IsAdmin:         false, // Unknown: will be updated by sync coordinator
+				CanSendMessages: true,  // True if message was sent successfully
+			})
+			if err != nil {
+				h.logger.Warnw(
+					"Failed to upsert membership (reactive harvesting)",
+					"chat_id", chatID,
+					"user_id", userID,
+					"error", err,
+				)
+				// Non-fatal: Continue processing
+			} else {
+				h.logger.Debugw(
+					"Reactive harvesting: recorded membership",
+					"chat_id", chatID,
+					"user_id", userID,
+				)
 			}
 		}
 	}
@@ -558,20 +558,18 @@ func (h *Handler) handleCommand(ctx context.Context, msg *tgbotapi.Message) erro
 				return nil // Error handled
 			}
 
-			// Resolve username to group ID if needed
-			resolvedGroupID, err := ResolveGroupID(identifier, func(username string) (int64, error) {
-				return h.store.GetGroupByUsername(ctx, username)
-			})
+			// Resolve username to group ID if needed (Feature 014: now supports title resolution)
+			resolvedGroupID, err := ResolveGroupID(identifier, h.store)
 			if err != nil {
 				h.logger.Warnw(
-					"Failed to resolve group username",
-					"username", identifier.Username,
+					"Failed to resolve group identifier",
+					"identifier", identifier,
 					"chat_id", chatID,
 					"user_id", userID,
 					"command", cmd.Name,
 					"error", err,
 				)
-				metrics.RecordError("resolve_group_username_failed", cmd.Name)
+				metrics.RecordError("resolve_group_identifier_failed", cmd.Name)
 				// Send error to user
 				if sendErr := h.router.SendCommandResponse(ctx, userID, SanitizeError(err)); sendErr != nil {
 					h.logger.Errorw("Failed to send error response", "error", sendErr)
@@ -650,6 +648,9 @@ func (h *Handler) handleCommand(ctx context.Context, msg *tgbotapi.Message) erro
 
 	case "mystatus":
 		response, cmdErr = h.commandHandler.HandleMyStatus(ctx, cmdCtx)
+
+	case "mygroups":
+		response, cmdErr = h.commandHandler.HandleMyGroups(ctx, cmdCtx, remainingArgs)
 
 	default:
 		// Feature 009 US4: Localized unknown command error
@@ -906,8 +907,8 @@ func (h *Handler) handleMyChatMember(ctx context.Context, update *tgbotapi.ChatM
 			"chat_title", update.Chat.Title,
 		)
 
-		// Ensure group record exists (Feature 011: proactive group record creation)
-		if err := h.store.EnsureGroupWithUsername(ctx, chatID, update.Chat.UserName); err != nil {
+		// Ensure group record exists (Feature 014: unified metadata harvesting)
+		if err := h.store.EnsureGroupMetadata(ctx, chatID, update.Chat.UserName, update.Chat.Title); err != nil {
 			h.logger.Errorw(
 				"Failed to ensure group exists",
 				"chat_id", chatID,

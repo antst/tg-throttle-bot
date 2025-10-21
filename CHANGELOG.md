@@ -7,6 +7,28 @@ All notable changes to ThrottleBot are documented in this file.
 
 ---
 
+## [1.2.0] - 2025-10-21
+
+### Critical Bug Fix: Group Metadata Corruption
+Fixed data corruption where group username and title overwrote each other. Commands now accept flexible group identifiers with international quote support.
+
+**Fixed**: Atomic upsert prevents username/title fields from overwriting each other when harvesting group metadata.
+
+**Added**: Unified group resolution - all admin commands accept chat ID (`-123456`), @username (`@home`), or title (`"My Group"`). Quote support for multi-word titles (5 types including mobile curly quotes and French/Russian guillemets). Conflict detection lists all matches when duplicate titles exist.
+
+**Enhanced**: `/mygroups` shows both title and @username when available ("Title (@username) - role").
+
+**Testing**: 20+ test cases with real multi-word group. Mobile client compatibility verified.
+
+### Group Membership Visibility
+New `/mygroups` command shows all groups where you and the bot are both members, displaying your role (admin/user) in each group.
+
+**Added**: `/mygroups [page]` command with pagination (20 groups per page). Supports English, Russian, Dutch. Role indicators for admin/user status.
+
+**Database**: Uses existing member sync infrastructure (no schema changes).
+
+---
+
 ## [1.1.0] - 2025-10-19
 
 ### Member Synchronization

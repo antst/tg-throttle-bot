@@ -34,6 +34,23 @@ func (q *Queries) CleanupOldMessages(ctx context.Context, dollar_1 *string) erro
 	return err
 }
 
+const CountUserGroups = `-- name: CountUserGroups :one
+SELECT COUNT(*) 
+FROM group_memberships gm
+JOIN groups g ON gm.chat_id = g.chat_id
+WHERE gm.user_id = $1 
+  AND gm.status = 'active'
+`
+
+// Count total active groups for pagination calculation
+// Supports FR-011 (pagination) from Feature 013 specification
+func (q *Queries) CountUserGroups(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, CountUserGroups, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const CreateDefaultWindows = `-- name: CreateDefaultWindows :exec
 INSERT INTO window_slots (chat_id, slot_id, char_limit, duration_value, duration_unit, window_duration, enabled)
 VALUES 
@@ -60,11 +77,13 @@ INSERT INTO sync_metadata (
 ) VALUES (
     $1, 'pending', NOW() + INTERVAL '24 hours'
 )
-ON CONFLICT (chat_id) DO NOTHING
+ON CONFLICT (chat_id) DO UPDATE SET
+    sync_status = EXCLUDED.sync_status,
+    next_sync_at = EXCLUDED.next_sync_at
 RETURNING id, chat_id, sync_status, last_sync_at, next_sync_at, created_at, updated_at, total_members, failed_attempts, last_error
 `
 
-// Initialize sync metadata for a new group
+// Initialize sync metadata for a new group (upserts to handle existing records)
 func (q *Queries) CreateSyncMetadata(ctx context.Context, chatID int64) (SyncMetadatum, error) {
 	row := q.db.QueryRow(ctx, CreateSyncMetadata, chatID)
 	var i SyncMetadatum
@@ -105,24 +124,33 @@ func (q *Queries) EnsureGroup(ctx context.Context, chatID int64) error {
 	return err
 }
 
-const EnsureGroupWithUsername = `-- name: EnsureGroupWithUsername :exec
-INSERT INTO groups (chat_id, username)
-VALUES ($1, $2)
+const EnsureGroupMetadata = `-- name: EnsureGroupMetadata :exec
+INSERT INTO groups (chat_id, username, title)
+VALUES ($1, $2, $3)
 ON CONFLICT (chat_id) DO UPDATE
-SET username = CASE 
-    WHEN EXCLUDED.username IS NOT NULL THEN EXCLUDED.username 
-    ELSE groups.username 
-END
+SET 
+    username = CASE 
+        WHEN EXCLUDED.username IS NOT NULL AND EXCLUDED.username != '' 
+        THEN EXCLUDED.username 
+        ELSE groups.username 
+    END,
+    title = CASE 
+        WHEN EXCLUDED.title IS NOT NULL AND EXCLUDED.title != '' 
+        THEN EXCLUDED.title 
+        ELSE groups.title 
+    END
 `
 
-type EnsureGroupWithUsernameParams struct {
+type EnsureGroupMetadataParams struct {
 	ChatID   int64   `json:"chat_id"`
 	Username *string `json:"username"`
+	Title    *string `json:"title"`
 }
 
-// Create or update group record with username (Feature 011: proactive group records)
-func (q *Queries) EnsureGroupWithUsername(ctx context.Context, arg EnsureGroupWithUsernameParams) error {
-	_, err := q.db.Exec(ctx, EnsureGroupWithUsername, arg.ChatID, arg.Username)
+// Create or update group record with both username and title (Feature 014: unified metadata upsert)
+// This replaces the broken EnsureGroupWithUsername and EnsureGroupWithTitle queries that caused data corruption
+func (q *Queries) EnsureGroupMetadata(ctx context.Context, arg EnsureGroupMetadataParams) error {
+	_, err := q.db.Exec(ctx, EnsureGroupMetadata, arg.ChatID, arg.Username, arg.Title)
 	return err
 }
 
@@ -329,25 +357,42 @@ func (q *Queries) GetEnabledWindows(ctx context.Context, chatID int64) ([]GetEna
 	return items, nil
 }
 
+const GetGroupByChatID = `-- name: GetGroupByChatID :one
+SELECT chat_id, username, title FROM groups
+WHERE chat_id = $1
+`
+
+type GetGroupByChatIDRow struct {
+	ChatID   int64   `json:"chat_id"`
+	Username *string `json:"username"`
+	Title    *string `json:"title"`
+}
+
+// Get group by chat_id - Feature 014: unified resolution
+func (q *Queries) GetGroupByChatID(ctx context.Context, chatID int64) (GetGroupByChatIDRow, error) {
+	row := q.db.QueryRow(ctx, GetGroupByChatID, chatID)
+	var i GetGroupByChatIDRow
+	err := row.Scan(&i.ChatID, &i.Username, &i.Title)
+	return i, err
+}
+
 const GetGroupByUsername = `-- name: GetGroupByUsername :one
-SELECT chat_id, username, language
-FROM groups
+SELECT chat_id, username, title FROM groups 
 WHERE LOWER(username) = LOWER($1)
-  AND username IS NOT NULL
-  AND username != ''
+LIMIT 1
 `
 
 type GetGroupByUsernameRow struct {
 	ChatID   int64   `json:"chat_id"`
 	Username *string `json:"username"`
-	Language string  `json:"language"`
+	Title    *string `json:"title"`
 }
 
-// Look up group by @username for group parameter parsing (Feature 008)
+// Get group by @username (case-insensitive) - Feature 014: unified resolution
 func (q *Queries) GetGroupByUsername(ctx context.Context, lower string) (GetGroupByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, GetGroupByUsername, lower)
 	var i GetGroupByUsernameRow
-	err := row.Scan(&i.ChatID, &i.Username, &i.Language)
+	err := row.Scan(&i.ChatID, &i.Username, &i.Title)
 	return i, err
 }
 
@@ -358,7 +403,7 @@ const GetGroupConfig = `-- name: GetGroupConfig :one
 
 
 
-SELECT chat_id, paused, resume_at, created_at, updated_at, language, username FROM groups
+SELECT chat_id, paused, resume_at, created_at, updated_at, language, username, title FROM groups
 WHERE chat_id = $1
 `
 
@@ -399,6 +444,7 @@ func (q *Queries) GetGroupConfig(ctx context.Context, chatID int64) (Group, erro
 		&i.UpdatedAt,
 		&i.Language,
 		&i.Username,
+		&i.Title,
 	)
 	return i, err
 }
@@ -458,6 +504,38 @@ func (q *Queries) GetGroupMembership(ctx context.Context, arg GetGroupMembership
 		&i.CanSendMessages,
 	)
 	return i, err
+}
+
+const GetGroupsByTitle = `-- name: GetGroupsByTitle :many
+SELECT chat_id, username, title FROM groups
+WHERE title = $1
+`
+
+type GetGroupsByTitleRow struct {
+	ChatID   int64   `json:"chat_id"`
+	Username *string `json:"username"`
+	Title    *string `json:"title"`
+}
+
+// Get groups by exact title match - Feature 014: unified resolution (may return multiple)
+func (q *Queries) GetGroupsByTitle(ctx context.Context, title *string) ([]GetGroupsByTitleRow, error) {
+	rows, err := q.db.Query(ctx, GetGroupsByTitle, title)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetGroupsByTitleRow{}
+	for rows.Next() {
+		var i GetGroupsByTitleRow
+		if err := rows.Scan(&i.ChatID, &i.Username, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const GetGroupsNeedingSync = `-- name: GetGroupsNeedingSync :many
@@ -639,6 +717,68 @@ func (q *Queries) GetUserByUsername(ctx context.Context, lower string) (int64, e
 	var user_id int64
 	err := row.Scan(&user_id)
 	return user_id, err
+}
+
+const GetUserGroupsWithRole = `-- name: GetUserGroupsWithRole :many
+
+SELECT 
+    g.chat_id,
+    g.title,
+    g.username,
+    gm.is_admin,
+    gm.joined_at
+FROM group_memberships gm
+JOIN groups g ON gm.chat_id = g.chat_id
+WHERE gm.user_id = $1 
+  AND gm.status = 'active'
+ORDER BY g.title ASC NULLS LAST
+LIMIT $2 OFFSET $3
+`
+
+type GetUserGroupsWithRoleParams struct {
+	UserID int64 `json:"user_id"`
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+type GetUserGroupsWithRoleRow struct {
+	ChatID   int64              `json:"chat_id"`
+	Title    *string            `json:"title"`
+	Username *string            `json:"username"`
+	IsAdmin  bool               `json:"is_admin"`
+	JoinedAt pgtype.Timestamptz `json:"joined_at"`
+}
+
+// ============================================================================
+// MyGroups Command Queries (Feature 013)
+// ============================================================================
+// Get paginated list of groups where user is an active member, with their role
+// Feature 014: Now includes username for enhanced display "Title (@username)"
+// Verifies FR-002, FR-003, FR-006, FR-009 from Feature 013 specification
+func (q *Queries) GetUserGroupsWithRole(ctx context.Context, arg GetUserGroupsWithRoleParams) ([]GetUserGroupsWithRoleRow, error) {
+	rows, err := q.db.Query(ctx, GetUserGroupsWithRole, arg.UserID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetUserGroupsWithRoleRow{}
+	for rows.Next() {
+		var i GetUserGroupsWithRoleRow
+		if err := rows.Scan(
+			&i.ChatID,
+			&i.Title,
+			&i.Username,
+			&i.IsAdmin,
+			&i.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const GetUserLanguage = `-- name: GetUserLanguage :one

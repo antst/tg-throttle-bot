@@ -92,6 +92,7 @@ kubectl apply -f deployments/k8s/service.yaml -n throttlebot
 ### User Commands
 - `/help` - Show available commands
 - `/mystatus` - Check usage across all windows
+- `/mygroups` - List groups where you and bot are members (with your role)
 - `/config` - Show rate limit configuration
 
 ### Admin Commands

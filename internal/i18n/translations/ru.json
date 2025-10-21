@@ -533,10 +533,50 @@
   },
   "cmd_help_user": {
     "description": "User help text (shown to everyone)",
-    "other": "🤖 Throttle Bot - Многооконный ограничитель скорости\n\n👤 **Ваши команды:**\n• /help - Показать это справочное сообщение\n• /help admin - Показать команды администратора\n• /mystatus @группа - Проверить текущее использование\n  Пример: /mystatus @home\n• /config @группа - Показать конфигурацию\n  Пример: /config @home\n• /setlanguage <язык> - Установить ваш язык\n  Пример: /setlanguage russian\n\n💡 **Как это работает:**\nКаждая группа имеет до 3 окон ограничения скорости (A, B, C) с разными:\n- Лимитами символов (например, 1000, 5000, 10000 символов)\n- Временными окнами (например, 30 минут, 2 часа, 7 дней)\n\nВаши сообщения учитываются во всех активных окнах. Если вы превысите лимит ЛЮБОГО окна, ваши сообщения будут автоматически удалены до сброса окна.\n\n🎯 **Состояния переопределения:**\n- **Обычное**: Применяется ограничение скорости (по умолчанию)\n- **Белый список**: Ваши сообщения всегда разрешены ✅\n- **Черный список**: Ваши сообщения всегда блокируются ❌\n\n💬 Свяжитесь с администратором, если вам нужна помощь!"
+    "other": "🤖 Throttle Bot - Многооконный ограничитель скорости\n\n👤 **Ваши команды:**\n• /help - Показать это справочное сообщение\n• /help admin - Показать команды администратора\n• /mystatus @группа - Проверить текущее использование\n  Пример: /mystatus @home\n• /mygroups - Список групп, где вы и бот являетесь участниками\n• /setlanguage <язык> - Установить ваш язык\n  Пример: /setlanguage russian\n\n💡 **Как это работает:**\nКаждая группа имеет до 3 окон ограничения скорости (A, B, C) с разными:\n- Лимитами символов (например, 1000, 5000, 10000 символов)\n- Временными окнами (например, 30 минут, 2 часа, 7 дней)\n\nВаши сообщения учитываются во всех активных окнах. Если вы превысите лимит ЛЮБОГО окна, ваши сообщения будут автоматически удалены до сброса окна.\n\n🎯 **Состояния переопределения:**\n- **Обычное**: Применяется ограничение скорости (по умолчанию)\n- **Белый список**: Ваши сообщения всегда разрешены ✅\n- **Черный список**: Ваши сообщения всегда блокируются ❌\n\n💬 Свяжитесь с администратором, если вам нужна помощь!"
   },
   "cmd_help_admin": {
     "description": "Admin help text (added to user help when /help admin is used)",
     "other": "\n\n� **Команды администратора:**\n\n**Управление окнами:**\n• /setwindow @группа <a|b|c> <лимит> <длительность>\n  Пример: /setwindow @home a 1000 30m\n• /enablewindow @группа <a|b|c>\n  Пример: /enablewindow @home a\n• /disablewindow @группа <a|b|c>\n  Пример: /disablewindow @home b\n\n**Управление пользователями:**\n• /override @группа <user_id|@username> <whitelist|blacklist|clear> [длительность]\n  Пример: /override @home @alice whitelist 7d\n  Пример: /override @home 123456789 blacklist\n  Пример: /override @home @bob clear\n• /checkuser @группа <user_id|@username>\n  Пример: /checkuser @home @alice\n• /overrides @группа\n  Пример: /overrides @home\n\n**Управление группой:**\n• /pause @группа [длительность]\n  Пример: /pause @home 2h\n  Пример: /pause @home (навсегда)\n• /resume @группа\n  Пример: /resume @home\n\n**Язык:**\n• /setlanguage <язык> (для вашего личного использования)\n  Пример: /setlanguage russian\n• /setlanguage @группа <язык> (для установки языка группы)\n  Пример: /setlanguage @home russian\n  Доступные: english, russian, dutch (или en, ru, nl)\n\n📊 **Просмотр конфигурации:**\n• /config @группа - Показать все настройки окон\n  Пример: /config @home\n\n⏰ **Форматы длительности:** Xm (минуты), Xh (часы), Xd (дни)\nПримеры: 30m, 2h, 7d, 365d"
+  },
+  "cmd_mygroups_help": {
+    "description": "Help text for /mygroups command",
+    "other": "Просмотреть список групп, где вы и бот являетесь участниками"
+  },
+  "cmd_mygroups_header": {
+    "description": "Header for group list (single page)",
+    "other": "📋 Ваши Группы"
+  },
+  "cmd_mygroups_header_paginated": {
+    "description": "Header for group list with pagination info",
+    "other": "📋 Ваши Группы (Страница {{.current}} из {{.total}})"
+  },
+  "cmd_mygroups_role_admin": {
+    "description": "Role label for admin users",
+    "other": "админ"
+  },
+  "cmd_mygroups_role_user": {
+    "description": "Role label for regular users",
+    "other": "участник"
+  },
+  "cmd_mygroups_empty": {
+    "description": "Message when user has no shared groups with bot",
+    "other": "Вы не являетесь участником ни одной группы, где присутствует этот бот."
+  },
+  "cmd_mygroups_next_page": {
+    "description": "Navigation instruction for next page",
+    "other": "\n\nИспользуйте /mygroups {{.page}} чтобы увидеть следующую страницу"
+  },
+  "cmd_mygroups_unnamed_group": {
+    "description": "Fallback text for groups with NULL title",
+    "other": "Группа без названия (ID: {{.chatID}})"
+  },
+  "cmd_mygroups_invalid_page": {
+    "description": "Error message for invalid page number",
+    "other": "Неверный номер страницы. Используйте /mygroups [1-{{.totalPages}}]"
+  },
+  "cmd_mygroups_error": {
+    "description": "Generic error message for /mygroups command",
+    "other": "Не удалось получить список групп. Пожалуйста, попробуйте снова."
   }
 }
